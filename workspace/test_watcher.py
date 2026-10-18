@@ -17,6 +17,8 @@ class DetectionTests(unittest.TestCase):
         self.assertEqual(watcher.detect('Continue [y/n]?',0)[0],'waiting')
 
     def test_dim_suggestion_is_not_input(self):
+        for suggestion in ('Yes, continue','1. 다음 작업','Allow edits'):
+            self.assertEqual(watcher.detect('  ❯ \x1b[2m'+suggestion+'\x1b[0m',0),('idle','empty-prompt'))
         for prompt in ('❯','›'):
             screen=prompt+' \x1b[2mSuggested next step\x1b[0m'
             self.assertEqual(watcher.detect(screen,0),('idle','empty-prompt'))

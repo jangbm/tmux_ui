@@ -566,7 +566,7 @@ class Sidebar(App):
             node.set_label(label)
         for key,node in self.project_nodes.items():
             record=projects.get(key,{})
-            label=Text(record.get('name',key),style='bold #e8e8e8')
+            label=Text(('★ ' if record.get('navigation_pinned') else '')+record.get('name',key),style='bold #e8e8e8')
             if any(s.get('pending') for s in record.get('source_states',{}).values()):
                 label.append('  결과',style='bold #f08080')
             node.set_label(label)

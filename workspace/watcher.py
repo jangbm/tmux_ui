@@ -50,8 +50,12 @@ def detect(screen,cursor_y,agent_running=True,dead=False):
         offset+=len(line)
     cursor_y=max(0,min(cursor_y,len(parsed)-1))
     near=[plain for plain,_ in parsed[max(0,cursor_y-8):cursor_y+8]]
-    if any(SELECTED.match(line) for row,(line,_) in enumerate(parsed) if abs(row-cursor_y)<=3):
-        return 'waiting','choice'
+    for row,(line,dim) in enumerate(parsed):
+        prompt=PROMPT.match(line)
+        if abs(row-cursor_y)<=3 and SELECTED.match(line) and prompt:
+            start=prompt.start(1)
+            if any(not faint and not char.isspace() for char,faint in zip(line[start:],dim[start:])):
+                return 'waiting','choice'
     nearby='\n'.join(near).lower()
     if re.search(r'\[(?:y/n|yes/no)\]|\((?:y/n|yes/no)\)|press enter to continue',nearby):
         return 'waiting','confirmation'

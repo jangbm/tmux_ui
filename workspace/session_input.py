@@ -1,6 +1,7 @@
 """User-triggered input to the exact registered tmux AI pane shown by the UI.
 
-No background input or automatic retries. Read-only polling lives in live_tmux.
+Only direct user actions or explicitly queued messages write input. No automatic
+retries after uncertain delivery. Read-only polling lives in live_tmux.
 """
 import fcntl
 import hashlib
@@ -39,23 +40,28 @@ def suggestion(screen,cursor):
     return ''
 
 
-def menu_open(screen,state,detail):
+def menu_open(screen,state,detail,cursor=None):
     if state=='waiting' and detail in ('choice','confirmation','menu'): return True
-    plain=styled_line(screen)[0]
-    selected=bool(re.search(r'^\s*[❯›>]\s+\S',plain,re.M))
-    hints=bool(re.search(r'enter to (?:confirm|select)|press enter to select',plain,re.I))
+    if state in ('idle','busy'): return False
+    plain,dim=styled_line(screen)
+    lines=plain.splitlines();cursor=len(lines)-1 if cursor is None else cursor
+    nearby='\n'.join(lines[max(0,cursor-4):cursor+5])
+    selected=bool(re.search(r'^\s*[❯›>]\s+\S',nearby,re.M))
+    hints=bool(re.search(r'enter to (?:confirm|select)|press enter to select','\n'.join(lines[-10:]),re.I))
     return selected and hints
 
 
-def snapshot(project,agent,pane=None,expected_pid=None):
-    options=targets(project,agent)
+def snapshot(project,agent,pane=None,expected_pid=None,candidates=None):
+    # Read-only UI polling may reuse its immediately preceding target query.
+    # All input operations omit candidates and always validate afresh.
+    options=targets(project,agent) if candidates is None else candidates
     target=next((p for p in options if p['id']==pane),None) if pane else (options[0] if len(options)==1 else None)
     if not target:
         raise ValueError('AI 창이 여러 개입니다. 위에서 전송할 창을 선택해 주세요.' if options and not pane else '선택한 AI 창이 종료되었거나 연결이 바뀌었습니다.')
     if expected_pid and target['pid']!=expected_pid: raise ValueError('AI 창이 다시 시작되었습니다. 연결을 확인한 뒤 다시 보내 주세요.')
     screen=live_tmux.capture(project['source_socket'],target['id'])
     state,detail=detect(screen,target['cursor'])
-    menu=menu_open(screen,state,detail)
+    menu=menu_open(screen,state,detail,target['cursor'])
     if menu: state,detail='waiting','menu'
     plain=styled_line(screen)[0]
     footer='\n'.join(plain.rstrip().splitlines()[-8:]).lower()

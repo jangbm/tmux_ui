@@ -12,6 +12,15 @@ LiveView=runpy.run_path(str(core.ROOT/'live-view.py'))['LiveView']
 
 
 class SourceTests(unittest.TestCase):
+    def test_unicode_sessions_and_expired_budget(self):
+        import time
+        records=[]
+        item=dict(name='시험',source_session='시험',source_socket='/tmp/source',kind='tmux-live')
+        live_tmux.merge_discovered(records,[item]);live_tmux.merge_discovered(records,[item])
+        self.assertEqual(len(records),1);self.assertTrue(records[0]['id'].startswith('live-'))
+        with patch('live_tmux.read') as read:
+            with self.assertRaises(TimeoutError): live_tmux.connections('/tmp/source',time.monotonic()-1)
+            read.assert_not_called()
     def test_removed_session_is_hidden_and_recreation_restores_without_losing_metadata(self):
         with tempfile.TemporaryDirectory() as tmp,patch.object(core,'CONFIG',Path(tmp)/'projects.json'),patch.object(core,'STATE',Path(tmp)/'state'):
             original=dict(id='live-test',name='test',kind='tmux-live',source_socket='/tmp/source',source_session='test',path='/projects/test')

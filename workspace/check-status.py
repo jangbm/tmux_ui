@@ -10,6 +10,7 @@ import core
 import watcher
 
 if core.SOCKET!='tmux-ui-test': raise SystemExit('Requires TMW_SOCKET=tmux-ui-test')
+if core.tmux('list-sessions').returncode==0: raise SystemExit('Test socket already in use; refusing to reuse it')
 
 with tempfile.TemporaryDirectory(prefix='tmux-ui-capture-') as tmp:
     root=Path(tmp)

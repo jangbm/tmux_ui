@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Integration checks; explicitly limited to the disposable tmux-ui-test server."""
 import fcntl
+import atexit
 import os
 from pathlib import Path
 import pty
@@ -18,6 +19,8 @@ import layout
 
 if core.SOCKET!='tmux-ui-test':
     raise SystemExit('Run with TMW_SOCKET=tmux-ui-test; never use a live workspace')
+if core.tmux('list-sessions').returncode==0: raise SystemExit('Test socket already in use; refusing to reuse it')
+atexit.register(lambda:core.tmux('kill-server'))
 
 PTY_FD=None
 
@@ -107,6 +110,13 @@ with tempfile.TemporaryDirectory(prefix='tmux-ui-layout-') as tmp:
     layout.show_terminal(project,toggle=True)
     print('Terminal drawer: create, hide, restore, switch; shell PID preserved',flush=True)
     for kind in ('cmd','powershell'):
+        executable=layout.SHELLS[kind][1][0]
+        probe=[executable,'/c','exit','0'] if kind=='cmd' else [executable,'-NoProfile','-Command','exit 0']
+        try: available=subprocess.run(probe,capture_output=True,timeout=5).returncode==0
+        except (OSError,subprocess.TimeoutExpired): available=False
+        if not available:
+            print('SKIP: '+kind+' requires working Windows/WSL interop',flush=True)
+            continue
         layout.show_terminal(project,kind=kind,new=True)
         def shell_alive():
             current=next(p for p in layout.terminals(project) if p['visible'])

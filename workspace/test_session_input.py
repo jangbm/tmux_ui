@@ -48,6 +48,9 @@ class RoutingTests(unittest.TestCase):
         with patch('session_input.targets',return_value=[{**SNAP,'pid':'11'}]):
             with self.assertRaises(ValueError): session_input.snapshot(PROJECT,'claude','%3','10')
     def test_menu_detection_and_keys_require_an_open_menu(self):
+        old='Select model\n› Alpha\nEnter to confirm\n'+'Reply\n'*12+'❯ \x1b[2mYes, continue\x1b[0m'
+        self.assertFalse(session_input.menu_open(old,'idle','empty-prompt',15))
+        self.assertFalse(session_input.menu_open(old+'\nstatus','unknown','unrecognized-screen',15))
         self.assertTrue(session_input.menu_open('Select model\n› gpt-model\nEnter to confirm','unknown','unrecognized-screen'))
         self.assertFalse(session_input.menu_open('› write a message\nesc to interrupt','busy','interrupt-hint'))
         for key in ('Up','Down','Enter','Escape'):
@@ -77,6 +80,29 @@ class RoutingTests(unittest.TestCase):
 
 Desktop=runpy.run_path(str(core.ROOT/'desktop-app.py'))['Desktop']
 class LiveUITests(unittest.IsolatedAsyncioTestCase):
+    async def test_korean_selection_copy_resize_and_reconnect_never_send(self):
+        from textual import events
+        current={**SNAP,'menu':False}
+        with tempfile.TemporaryDirectory() as tmp,patch.object(core,'CONFIG',Path(tmp)/'projects.json'),patch.object(core,'STATE',Path(tmp)/'state'),patch('session_input.targets',side_effect=lambda *a:[{**current,'label':'Claude'}]),patch('session_input.snapshot',side_effect=lambda *a:dict(current)),patch('session_input.send') as send,patch('session_input.control') as control,patch('shutil.which',return_value=None):
+            core.atomic(core.CONFIG,[PROJECT]);state=DeskState();tab=state.open(PROJECT['id'])
+            app=Desktop(PROJECT,state.value,publish=False)
+            async with app.run_test(size=(100,30)) as pilot:
+                await pilot.pause(.7)
+                panel=app.views[tab['id']].panels['claude'];composer=panel.query_one('.composer')
+                composer.focus();app.post_message(events.Paste('한글 입력\n다음 줄'))
+                await pilot.pause();composer.action_select_all()
+                await pilot.press('ctrl+c');await pilot.pause()
+                self.assertEqual(app.clipboard,'한글 입력\n다음 줄');control.assert_not_called()
+                panel.queue.add('예약','%3','10');panel.queue.resume(current)
+                current.update(id='%7',pid='99')
+                panel.refresh_source();await pilot.pause(.3)
+                self.assertEqual(panel.source_pane,'%7');self.assertFalse(panel.queue.armed)
+                for size in ((28,12),(160,45),(70,24)):
+                    await pilot.resize_terminal(*size);await pilot.pause()
+                self.assertEqual(composer.text,'한글 입력\n다음 줄')
+                send.assert_not_called();control.assert_not_called()
+                self.assertIsNone(app._exception)
+
     async def test_busy_message_queues_once_then_dispatches_and_keeps_new_draft(self):
         current={**SNAP,'menu':False,'state':'busy','detail':'interrupt-hint'}
         with tempfile.TemporaryDirectory() as tmp,patch.object(core,'CONFIG',Path(tmp)/'projects.json'),patch.object(core,'STATE',Path(tmp)/'state'),patch('session_input.targets',return_value=[{**SNAP,'label':'Claude %3'}]),patch('session_input.snapshot',side_effect=lambda *a:dict(current)),patch('session_input.send') as send:

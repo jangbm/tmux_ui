@@ -292,6 +292,8 @@ class ChatPanel(Vertical):
         if not self.is_live or (not self.is_on_screen and not self.queue.armed): return
         try:
             options=await asyncio.to_thread(session_input.targets,self.project,self.agent)
+            if self.source_pane and not any(p['id']==self.source_pane for p in options) and len(options)==1:
+                self.queue.pause();self.source_pane=options[0]['id'];self.source_pid=None
             choices=tuple((p['label'],p['id']) for p in options)
             selector=self.query_one('.source-target',Select)
             if choices!=self.target_options:
@@ -299,7 +301,7 @@ class ChatPanel(Vertical):
                 selector.display=len(options)>1 or bool(self.source_pane and not any(p['id']==self.source_pane for p in options))
                 if self.source_pane and any(p['id']==self.source_pane for p in options): selector.value=self.source_pane
             if not self.source_pane and len(options)==1: self.source_pane=options[0]['id']
-            current=await asyncio.to_thread(session_input.snapshot,self.project,self.agent,self.source_pane)
+            current=await asyncio.to_thread(session_input.snapshot,self.project,self.agent,self.source_pane,None,options)
             self.current_source=current
             self.source_pane=current['id']; self.source_pid=current['pid']
             self.source_menu=current.get('menu',False)
@@ -677,6 +679,10 @@ class Desktop(App):
             index=keys.index(group['active']) if group['active'] in keys else 0
             self.select_tab(keys[(index+offset)%len(keys)])
     def action_stop_active(self):
+        if isinstance(self.focused,TextArea) and self.focused.selected_text:
+            self.copy_to_clipboard(self.focused.selected_text)
+            return
+        if len(self.screen_stack)>1: return
         selection=self.screen.get_selected_text()
         if selection:
             self.copy_to_clipboard(selection)

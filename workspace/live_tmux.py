@@ -37,8 +37,10 @@ def capture(socket,pane):
 def connections(socket,deadline=None):
     """Find real CLI processes per source session without reading terminal text."""
     from watcher import pane_agent
+    remaining=.4 if deadline is None else min(.4,deadline-time.monotonic())
+    if remaining<=0: raise TimeoutError('AI connection scan timed out')
     rows=read(socket,'list-panes','-a','-F',
-              '#{session_name}|#{pane_current_command}|#{pane_pid}|#{pane_dead}',timeout=.4)
+              '#{session_name}|#{pane_current_command}|#{pane_pid}|#{pane_dead}',timeout=remaining)
     found={}
     for row in rows.splitlines():
         session,command,pid,dead=row.split('|')
@@ -99,6 +101,8 @@ def activity(socket,deadline):
         try:
             screen=read(socket,'capture-pane','-p','-e','-t',pane,timeout=min(.12,remaining))
             state,reason=detect(screen,int(cursor))
+            from session_input import menu_open
+            if menu_open(screen,state,reason,int(cursor)): state,reason='waiting','choice'
         except (OSError,RuntimeError,subprocess.TimeoutExpired): continue
         key=socket+'|'+pane
         old=previous.get(key,{})
@@ -141,7 +145,8 @@ def merge_discovered(records,found):
         existing=next((p for p in records if p.get('kind')=='tmux-live' and
             (p.get('source_socket'),p.get('source_session'))==identity),None)
         if existing: continue  # Keep names, order, visibility, and pinned targets.
-        key='live-'+core.slug(item['source_session'])
+        try: key='live-'+core.slug(item['source_session'])
+        except ValueError: key='live-'+hashlib.sha256(repr(identity).encode()).hexdigest()[:12]
         if any(p['id']==key for p in records):
             key+='-'+hashlib.sha256(repr(identity).encode()).hexdigest()[:12]
         suffix=key;number=2

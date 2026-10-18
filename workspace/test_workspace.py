@@ -96,6 +96,8 @@ class SidebarTests(unittest.IsolatedAsyncioTestCase):
                     await pilot.click('#project-filter');await pilot.click('#pin-project');await pilot.pause()
                     self.assertEqual(list(app.project_nodes)[0],'live-one')
                     self.assertTrue(next(p for p in core.projects() if p['id']=='live-one')['navigation_pinned'])
+                    app.paint_status()
+                    self.assertIn('★',str(app.project_nodes['live-one'].label))
                     module=runpy.run_path(str(core.ROOT/'sidebar.py'))
                     app.push_screen(module['GitDiffView']('sample diff'))
                     await pilot.pause(.8)
