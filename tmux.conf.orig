@@ -1,0 +1,28 @@
+# 워커 WSL ~/.tmux.conf 원본 (infra/워커PC_세팅.md 4-2)
+# 적용: scp로 워커에 복사 → wsl -e cp /mnt/c/Users/jang/tmux.conf /home/jang/.tmux.conf → tmux source-file ~/.tmux.conf
+
+# 마우스로 스크롤·창 선택·크기 조절
+set -g mouse on
+
+# 스크롤로 거슬러 볼 줄 수 (Claude 출력이 길다)
+set -g history-limit 50000
+
+# Esc 반응 지연 없애기 (Claude Code에서 Esc로 중단할 때 바로 먹게)
+set -sg escape-time 10
+
+# 색상: Windows Terminal의 트루컬러를 그대로 전달
+set -g default-terminal "tmux-256color"
+set -as terminal-features ",xterm-256color:RGB"
+
+# 창 번호를 1부터 (키보드 왼쪽부터 Ctrl+b 1, 2, 3...)
+set -g base-index 1
+setw -g pane-base-index 1
+set -g renumber-windows on
+
+# 상태바: 왼쪽에 세션(프로젝트) 이름을 크게
+set -g status-left-length 30
+set -g status-left "#[bold] #S #[default]| "
+
+# 터미널 탭 제목을 세션 이름으로 (프로필이 없는 탭·바탕화면 WSL 창에서도 어느 세션인지 보이게)
+set -g set-titles on
+set -g set-titles-string "#S"
