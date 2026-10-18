@@ -27,6 +27,9 @@ import session_input
 
 
 class Composer(TextArea):
+    def on_resize(self,event):
+        self.call_after_refresh(self.app.sync_ime_cursor)
+
     BINDINGS=[Binding('enter','send','보내기',priority=True),Binding('shift+enter','newline','줄바꿈',priority=True),Binding('tab','suggestion','추천 입력',priority=True),Binding('shift+tab','mode','Claude 모드',priority=True),*[Binding(key,f"menu_key('{key}')",show=False,priority=True) for key in ('up','down','left','right','escape')]]
     def action_send(self):
         panel=self.parent.parent
@@ -666,6 +669,13 @@ class Desktop(App):
         with Stage(id='stage'):
             yield GroupGrip('',id='group-grip')
             yield Static('',id='drop-preview')
+    def sync_ime_cursor(self):
+        composer=self.focused
+        if isinstance(composer,Composer) and composer.region.width and composer.region.height:
+            self.cursor_position=composer.cursor_screen_offset
+    @on(TextArea.SelectionChanged)
+    def sync_input_cursor(self,event):
+        self.call_after_refresh(self.sync_ime_cursor)
     def action_open_tabs(self):
         if len(self.screen_stack)>1: return
         rows=[dict(id=t['id'],name=self.projects.get(t['project'],{}).get('name',t['project']),group=i+1,pinned=t.get('pinned',False)) for i,g in enumerate(self.state.groups) for t in g['tabs']]
@@ -799,6 +809,7 @@ class Desktop(App):
             if group['active'] in self.views:
                 view=self.views[group['active']]
                 view.styles.offset=(x,y+3); view.styles.width=w; view.styles.height=max(1,h-3)
+        self.call_after_refresh(self.sync_ime_cursor)
     def reveal_active(self):
         for group in self.state.groups:
             view=self.views.get(group['active'])

@@ -293,3 +293,10 @@
 - 회귀 검사 추가: 이름 중복/그룹 선택, 한글 검색/0건/취소/키보드, Desktop의 실제 그룹 이동과 tmux 무호출, 폴더 전환/새로고침/접힘 복원, 깊이·항목 수 제한, symlink/생성 폴더 제외. Sidebar 테스트 상태 경로를 임시 폴더로 격리. 상단 배치 테스트는 수동 CSS 모드가 실제 소켓 갱신 타이머에 의해 바뀌지 않도록 고정.
 - 합성 전후 캡처: `workspace/previews/navigation-before-tabs.svg`, `navigation-after-tabs.svg`, `navigation-before-files.svg`, `navigation-after-files.svg`. 게시용 이전 소스를 baseline으로 읽어 전후 생성. 임시 폴더/가짜 프로젝트만 사용하며 운영 대화/파일 목록은 포함하지 않음.
 - 검증 완료: 전체 69개 검사 통과, 마지막 보강 후 탐색 3개/Sidebar 8개 추가 통과. 격리 tmux Desktop 마우스/재시작/기존 프로세스 보존 통과. preview Desktop·Sidebar 반영 및 생존 확인. 운영 원본에는 키 전송·종료·설정 변경 없음.
+
+2026-10-18 한글 조합 표시 위치 점검
+- 사용자 이미지 `/mnt/v/1.images/003.PNG`에서 입력창 왼쪽에 분리된 한글 조합 표시 확인. 공개 저장소에 사용자 이미지를 복사하지 않음. UTF 오류 문구는 보이지 않으며 현 환경의 LANG/LC_ALL/Python 인코딩은 UTF-8.
+- 재현: Composer 포커스 후 창 축소 시 실제 입력 커서는 (10,10)인데 Textual app.cursor_position은 이전 (10,27)에 남음. 화면 배치/입력창 크기 변경/선택 변경 뒤 실제 포커스된 Composer 좌표를 동기화하도록 수정. 좌표 일치 회귀 검사 추가, 입력 검사 15개 통과.
+- 사용자가 느끼는 입력 지연은 Windows IME 조합부터 화면 출력까지의 실제 경로에서 아직 측정하지 못함. 타이핑은 원본 AI 화면의 0.5초 폴링과 별개로 즉시 처리. 임시 파일에서 합성 초안 저장 20회는 중앙값 0.03ms/최대 0.09ms로 이번 측정에서 저장 지연 재현 없음(실제 Windows 입력 지연 측정값 아님).
+- 별도 한글 패키지 설치나 운영 세션 설정 변경은 하지 않음. 실제 Windows IME 표시 위치 및 체감 지연은 사용자 확인 필요.
+- 전체 69개 회귀 검사 통과. preview Desktop에 반영 완료.

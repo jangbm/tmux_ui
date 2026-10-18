@@ -102,6 +102,7 @@ class LiveUITests(unittest.IsolatedAsyncioTestCase):
                     self.assertLessEqual(app.views[tab['id']].region.right,size[0])
                     self.assertLessEqual(composer.region.bottom,size[1])
                     self.assertGreater(composer.region.height,0)
+                    self.assertEqual(app.cursor_position,composer.cursor_screen_offset)
                 self.assertEqual(composer.text,'한글 입력\n다음 줄')
                 send.assert_not_called();control.assert_not_called()
                 self.assertIsNone(app._exception)
