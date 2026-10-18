@@ -68,6 +68,14 @@ def _command(project,*args,input=None):
     if result.returncode: raise RuntimeError(result.stderr.strip() or 'tmux 전송 실패')
 
 
+def blocked_reason(current):
+    if current.get('menu'): return '원본 AI의 선택·승인 메뉴가 열려 있습니다. 메뉴를 선택하거나 Esc로 취소한 뒤 보내 주세요.'
+    if current.get('state')=='busy': return '원본 AI가 작업 중입니다. 응답이 끝나거나 ■로 중지한 뒤 보내 주세요.'
+    if current.get('detail')=='draft': return '원본 tmux 입력창에 작성 중인 글이 있습니다. 원본에서 전송하거나 지운 뒤 보내 주세요.'
+    if current.get('state')=='waiting': return '원본 AI가 질문·확인 응답을 기다리고 있습니다. 원본 화면의 안내를 먼저 처리해 주세요.'
+    return '원본 AI의 준비 상태를 확인하지 못했습니다. 잠시 뒤 다시 보내 주세요. ('+current.get('detail','unknown')+')'
+
+
 def send(project,agent,pane,pid,message):
     message=message.replace('\r\n','\n').replace('\r','\n')
     if not message.strip(): raise ValueError('메시지를 입력해 주세요.')
@@ -80,13 +88,13 @@ def send(project,agent,pane,pid,message):
         except BlockingIOError: raise ValueError('이 AI 창에 다른 메시지를 전송 중입니다.')
         current=snapshot(project,agent,pane,pid)
         if current['state']!='idle':
-            raise ValueError('tmux 입력창이 비어 있는 준비 상태에서 보내 주세요. 작업·질문 대기 중이거나 작성 중인 입력이 있습니다.')
+            raise ValueError(blocked_reason(current))
         buffer='tmw-message-'+uuid.uuid4().hex
         try:
             _command(project,'load-buffer','-b',buffer,'-',input=message)
             # Revalidate after buffer creation. No shell command is ever constructed from the message.
             current=snapshot(project,agent,pane,pid)
-            if current['state']!='idle': raise ValueError('전송 직전에 tmux 상태가 바뀌었습니다. 다시 확인해 주세요.')
+            if current['state']!='idle': raise ValueError('전송 직전에 상태가 바뀌었습니다. '+blocked_reason(current))
             _command(project,'paste-buffer','-p','-r','-d','-b',buffer,'-t',pane)
             time.sleep(.12)
             # Do not press Enter if the CLI was replaced by a shell during the paste.

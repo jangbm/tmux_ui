@@ -13,6 +13,10 @@ PROJECT=dict(id='live-video',name='video',kind='tmux-live',source_session='video
 SNAP=dict(id='%3',pid='10',cursor=1,screen='Reply\n❯ \x1b[2m추천 문구\x1b[22m',state='idle',detail='empty-prompt',suggestion='추천 문구',mode='Auto')
 
 class RoutingTests(unittest.TestCase):
+    def test_blocked_send_explains_actual_reason(self):
+        for current,expected in [({'state':'busy'},'작업 중'),({'state':'waiting','menu':True},'승인 메뉴'),({'state':'waiting','detail':'draft'},'작성 중인 글'),({'state':'unknown','detail':'unrecognized-screen'},'준비 상태를 확인하지 못')]:
+            self.assertIn(expected,session_input.blocked_reason(current))
+
     def test_nested_worker_cannot_receive_input_through_parent_pane(self):
         project={**PROJECT,'source_session':'unity'}
         with patch('live_tmux.read',return_value='unity|%2|10|claude|0|1|1|1\n'),patch('watcher.running_agent',return_value=True):
