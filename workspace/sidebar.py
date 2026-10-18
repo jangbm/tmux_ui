@@ -158,6 +158,20 @@ class Sidebar(App):
     Screen.narrow #project-search-tools { layout: vertical; height: 4; }
     Screen.narrow #project-search { width: 1fr; }
     Screen.narrow #project-filter { width: 1fr; height: 1; min-height: 1; padding: 0; border: none; }
+    Screen, Tree, Tabs, Tab, #terminal-list { background: #202328; color: #d8dce2; }
+    Tab.-active { background: #2c3541; color: #b9d9f3; }
+    Underline > .underline--bar { color: #78a9d1; background: #383d45; }
+    Tree:focus > .tree--cursor { background: #30445a; color: #f0f3f7; }
+    #section Button { background: transparent; color: #adc9e2; }
+    #section-title, #summary, #terminal-help, #no-project { color: #acb6c4; }
+    #project-search:focus { border: round #78a9d1; }
+    #project-filter { color: #c7d4e3; }
+    #project-empty { display: none; height: auto; padding: 1; color: #acb6c4; }
+    #git-scroll { padding: 1; }
+    #git-diff { height: 3; width: 1fr; min-width: 8; border: round #465567; background: #29333f; color: #c7d4e3; }
+    #terminal-help { padding: 1; }
+    #terminal-tools { padding: 0 1; }
+    #dock-tools Button { min-width: 8; width: 8; color: #acb6c4; }
     '''
     BINDINGS=[('n','new_project','New'),('i','import_project','Import'),('a','agent_settings','Agents'),('r','refresh','Refresh'),('escape','cancel_form','Cancel'),('q','quit','Close')]
     def compose(self)->ComposeResult:
@@ -196,23 +210,24 @@ class Sidebar(App):
                     with Horizontal(id='actions'):
                         yield Button('Create',id='create',variant='primary')
                         yield Button('Cancel',id='cancel')
+                yield Static('',id='project-empty')
                 yield ProjectTree('PROJECTS',id='tree')
             with TabPane('Files',id='files-view'):
-                yield Static('Open a project to browse files.',id='no-project')
+                yield Static('프로젝트를 선택하면 파일이 표시됩니다.',id='no-project')
                 yield ProjectFiles(core.ROOT/'data',id='files')
             with TabPane('Git',id='git-view'):
                 yield Button('변경 내용 보기',id='git-diff',tooltip='작업 트리와 스테이징 diff · 읽기 전용')
                 with VerticalScroll(id='git-scroll'):
-                    yield Static('Open a project to see Git changes.',id='git-status',markup=False)
+                    yield Static('프로젝트를 선택하면 Git 상태가 표시됩니다.',id='git-status',markup=False)
             with TabPane('Terminal',id='terminal-view'):
                 with Vertical(id='terminal-tools'):
                     yield Select([(label,key) for key,(label,_) in layout.SHELLS.items()],value='bash',allow_blank=False,id='shell-kind')
                     with Horizontal(id='terminal-actions'):
-                        yield Button('+',id='new-terminal',tooltip='New terminal with selected shell')
-                        yield Button('↥',id='toggle-terminal',tooltip='Show or hide terminal')
-                        yield Button('×',id='hide-terminal',tooltip='Hide terminal; keep shell running')
+                        yield Button('+',id='new-terminal',tooltip='선택한 셸로 새 터미널 열기')
+                        yield Button('↥',id='toggle-terminal',tooltip='터미널 열기 / 숨기기')
+                        yield Button('×',id='hide-terminal',tooltip='터미널 숨기기 · 셸 유지')
                 yield OptionList(id='terminal-list')
-                yield Static('Select a terminal to restore it.\nCtrl+` toggles the bottom panel.',id='terminal-help')
+                yield Static('터미널을 선택하면 다시 열립니다.\nCtrl+` · 하단 패널 열기/닫기',id='terminal-help')
         yield Static('',id='summary')
         with Horizontal(id='dock-tools'):
             yield Static('배치',id='dock-label')
@@ -275,7 +290,7 @@ class Sidebar(App):
     def action_agent_settings(self):
         project=self.current_project()
         if not project:
-            self.notify('Open a project first'); return
+            self.notify('먼저 프로젝트를 선택해 주세요'); return
         self.query_one('#views',TabbedContent).active='projects-view'
         self.query_one('#form').remove_class('visible')
         self.query_one('#agent-form').add_class('visible')
@@ -355,8 +370,9 @@ class Sidebar(App):
         try:
             items=await asyncio.to_thread(layout.terminals,project)
             options=self.query_one('#terminal-list',OptionList)
+            self.query_one('#terminal-help',Static).update('터미널을 선택하면 다시 열립니다.\nCtrl+` · 열기/닫기' if items else '열린 터미널이 없습니다.\n셸을 선택하고 + 버튼을 누르세요.')
             options.clear_options()
-            options.add_options([Option(Text(('● ' if p['visible'] else '○ ')+p['label']+' '+p['id']+(' · exited' if p['dead'] else '')),id=p['id']) for p in items])
+            options.add_options([Option(Text(('● ' if p['visible'] else '○ ')+p['label']+' '+p['id']+(' · 종료됨' if p['dead'] else '')),id=p['id']) for p in items])
         except (OSError,ValueError,RuntimeError) as error:
             self.notify(str(error),severity='error')
     @on(Button.Pressed,'#new-terminal')
@@ -383,7 +399,7 @@ class Sidebar(App):
         output=self.screen_stack[0].query_one('#git-status',Static)
         snapshot=await asyncio.to_thread(core.git_snapshot,project['path'])
         if 'error' in snapshot:
-            text=snapshot['error']
+            text=('Git 상태를 읽을 수 없습니다.\nGit 설치 여부와 저장소 폴더를 확인해 주세요.' if snapshot['error']=='Git unavailable or folder is not a repository' else snapshot['error'])
         else:
             text=f"{snapshot['branch']}\n\n"
             if snapshot.get('upstream'):
@@ -391,8 +407,8 @@ class Sidebar(App):
             else: text+='원격 추적 브랜치 미설정\n\n'
             text+=f"{snapshot['staged']} staged · {snapshot['modified']} modified\n"
             text+=f"{snapshot['untracked']} untracked · {snapshot['conflicts']} conflicts\n\n"
-            text+='\n'.join(f'{code} {name}' for code,name in snapshot['files']) or 'Working tree clean'
-            if len(snapshot['files'])==200: text+='\n\nShowing up to 200 paths'
+            text+='\n'.join(f'{code} {name}' for code,name in snapshot['files']) or '변경 사항 없음'
+            if len(snapshot['files'])==200: text+='\n\n최대 200개 경로 표시'
         output.update(text)
     @on(Button.Pressed,'#git-diff')
     def git_diff(self,event):
@@ -447,6 +463,9 @@ class Sidebar(App):
         current=next((p for p in items if p['id']==self.active_project),None)
         if current: self.query_one('#active-project',Static).update(core.chat_project(current)['name'])
         self.query_one('#section-title',Static).update(f'{len(items)}개' if self.size.width<28 else f'PROJECTS  {len(items):02}')
+        empty=self.query_one('#project-empty',Static)
+        empty.display=not items
+        empty.update('일치하는 프로젝트가 없습니다.\n검색어를 지우거나 필터를 전체로 바꿔 주세요.' if search or mode!='전체' else '등록된 프로젝트가 없습니다.\n+ 버튼으로 추가하거나 원본 tmux 세션을 시작하세요.')
         for project in items:
             label=Text(('★ ' if project.get('navigation_pinned') else '')+project['name'],style='bold #e8e8e8')
             if project['id']==self.active_project: label.append('  •',style='#8fbd9b')
@@ -559,7 +578,7 @@ class Sidebar(App):
             if record.get('source_agents_error'): icon,color,caption='?','#e3bb73','확인 불가'
             pending=raw.get('pending')
             if pending:
-                icon,color,caption='!','#f08080','결과 · 승인 대기' if pending=='approval' else '결과'
+                icon,color,caption='!','#f08080','결과·승인' if pending=='approval' else '결과'
             label=Text(f'{icon} ',style=color)
             label.append(agent.title(),style=AGENT_COLORS[agent])
             label.append(' '+caption+(f' · {count}개' if count>1 else ''),style=color)

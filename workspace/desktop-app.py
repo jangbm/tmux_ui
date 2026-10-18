@@ -138,11 +138,11 @@ class ChatPanel(Vertical):
         self.draft_path=core.STATE/'desk-drafts'/f"{project['id']}-{agent}-{tab_id}.json"
     def compose(self)->ComposeResult:
         with Horizontal(classes='chat-heading'):
-            yield Static(('◉  ' if self.agent=='claude' else '◇  ')+self.agent.title(),classes='agent-name')
+            yield Static(('◉  ' if self.agent=='claude' else '◇  ')+self.agent.title(),classes='agent-name '+self.agent)
             yield Static('tmux 연결 중…' if self.is_live else '새 대화',classes='chat-status')
             yield Button('⧉',classes='copy-selection',tooltip='선택한 글 복사 · Ctrl+C')
             if self.is_live and self.agent=='claude':
-                yield Button('⇧Tab',classes='mode-toggle',tooltip='Shift+Tab · 기존 Claude 모드 전환')
+                yield Button('모드',classes='mode-toggle',tooltip='Shift+Tab · 기존 Claude 모드 전환')
             if self.is_live: yield Button('⏻',classes='shutdown-ai',tooltip='선택한 AI 종료')
             yield Button('×',classes='close-chat',tooltip='이 대화창 닫기')
         yield Input(placeholder='현재 화면에서 찾기 · Esc 닫기',classes='thread-search')
@@ -199,6 +199,10 @@ class ChatPanel(Vertical):
         if composer: core.atomic(self.draft_path,{'text':composer.text,'queue':self.queue.items})
     def on_resize(self,event):
         self.set_class(event.size.height<14,'compact-chat')
+        self.set_class(event.size.width<38,'narrow-chat')
+        for button in self.query('.menu-key'):
+            if button.name in ('Enter','Escape'):
+                button.label=({'Enter':'↵','Escape':'×'} if event.size.width<40 else {'Enter':'선택','Escape':'취소'})[button.name]
         if list(self.query('.composer')): self.size_composer()
     def size_composer(self):
         composer=self.query_one('.composer',Composer)
@@ -499,7 +503,7 @@ class ProjectView(Horizontal):
         with Vertical(classes='empty-project'):
             yield Static('◇',classes='empty-symbol')
             yield Static(self.project['name'],classes='empty-title',markup=False)
-            yield Static('대화창이 닫혀 있습니다.' if self.agents else '현재 실행 중인 AI가 없습니다.',classes='empty-note')
+            yield Static('대화창이 닫혀 있습니다.' if self.agents else '실행 중인 AI가 없습니다. 원본 세션에서 AI를 시작하면 자동 연결됩니다.',classes='empty-note')
             with Horizontal(classes='restore-buttons'):
                 for agent in self.agents: yield Button(agent.title()+' 열기',name=agent,classes='restore-chat')
     def on_mount(self): self.size_panels()
@@ -516,7 +520,7 @@ class ProjectView(Horizontal):
                 panel=ChatPanel(project,agent,self.entry['id']); self.panels[agent]=panel; self.mount(panel,before=empty)
         buttons=self.query_one('.restore-buttons')
         buttons.remove_children(); buttons.mount(*(Button(a.title()+' 열기',name=a,classes='restore-chat') for a in agents))
-        self.query_one('.empty-note',Static).update('대화창이 닫혀 있습니다.' if agents else '현재 실행 중인 AI가 없습니다.')
+        self.query_one('.empty-note',Static).update('대화창이 닫혀 있습니다.' if agents else '실행 중인 AI가 없습니다. 원본 세션에서 AI를 시작하면 자동 연결됩니다.')
         self.call_after_refresh(self.size_panels)
     def on_resize(self,event):
         self.set_class(event.size.width<64,'stacked'); self.size_panels()
@@ -548,26 +552,30 @@ class TabLabel(Static):
     def on_mouse_move(self,event):
         if self.app.mouse_captured is not self or not hasattr(self,'origin'): return
         if abs(event.screen_x-self.origin[0])+abs(event.screen_y-self.origin[1])>1:
-            self.dragged=True; self.app.preview_drop(event.screen_x,event.screen_y)
+            self.dragged=True; self.parent.add_class('dragging'); self.app.preview_drop(event.screen_x,event.screen_y)
     def on_mouse_up(self,event):
         if not hasattr(self,'origin'): return
         self.release_mouse(); event.stop()
         tab=self.parent
         if self.dragged: self.app.drop_tab(tab.tab_id,event.screen_x,event.screen_y)
         else: self.app.select_tab(tab.tab_id)
+        tab.remove_class('dragging')
         del self.origin; self.app.clear_drop()
 
 
 class TabChip(Horizontal):
     def __init__(self,entry,project,active):
-        super().__init__(classes='tab-chip'+(' selected' if active else ''))
+        super().__init__(classes='tab-chip'+(' selected' if active else '')+(' pinned' if entry.get('pinned') else ''))
+        self.tooltip=project['name']+' · 탭 우클릭으로 고정·이동·닫기'
         self.tab_id=entry['id']
         self.project=project
         self.pinned=entry.get('pinned',False)
     def compose(self)->ComposeResult:
         pending=any(s.get('pending') for s in self.project.get('source_states',{}).values())
-        yield TabLabel(('◆ ' if self.pinned else '')+self.project['name']+(' ●' if pending else ''),classes='tab-label',markup=False)
+        yield TabLabel(Text(('◆ ' if self.pinned else '')+self.project['name']+(' ●' if pending else ''),no_wrap=True,overflow='ellipsis'),classes='tab-label',markup=False)
         yield Button('×',classes='close-tab',tooltip='탭 닫기')
+    def on_mount(self):
+        if self.has_class('selected'): self.call_after_refresh(self.scroll_visible,animate=False)
     @on(Button.Pressed,'.close-tab')
     def close(self,event): event.stop(); self.app.close_tab(self.tab_id)
     def on_mouse_down(self,event):
@@ -588,6 +596,12 @@ class EditorGroup(Vertical):
     def on_mount(self):
         self.rebuild(self.app.state.group(self.group_id))
         self.call_after_refresh(self.app.finish_render)
+    def on_resize(self,event):
+        self.set_class(event.size.width<48,'narrow-group')
+        self.call_after_refresh(self.reveal_selected)
+    def reveal_selected(self):
+        selected=next(iter(self.query('.tab-chip.selected')),None)
+        if selected: selected.scroll_visible(animate=False)
     def rebuild(self,group):
         if not list(self.query('.group-tabs')): return
         signature=(group['active'],tuple((t['id'],t['project'],t.get('pinned',False),any(s.get('pending') for s in self.app.projects.get(t['project'],{}).get('source_states',{}).values())) for t in group['tabs']))
@@ -622,6 +636,12 @@ class GroupGrip(Static):
         self.release_mouse(); event.stop(); self.app.persist()
 
 
+class Stage(Vertical):
+    def on_resize(self,event):
+        # App resize arrives before the stage has its new content dimensions.
+        self.call_after_refresh(self.app.place_groups)
+
+
 class Desktop(App):
     CSS_PATH=core.ROOT/'desktop.tcss'
     BINDINGS=[Binding('ctrl+pageup','previous_tab','이전 탭',priority=True),
@@ -639,7 +659,7 @@ class Desktop(App):
         self.focus_tab=None
         self.groups={}; self.views={}; self.closed={t['id']:t for t in self.state.value.get('closed',[])}; self.request_nonce=None; self.rectangles={}
     def compose(self)->ComposeResult:
-        with Vertical(id='stage'):
+        with Stage(id='stage'):
             yield GroupGrip('',id='group-grip')
             yield Static('',id='drop-preview')
     def action_previous_tab(self): self.step_tab(-1)

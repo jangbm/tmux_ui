@@ -107,3 +107,7 @@ TMW_SOCKET=tmux-ui-test workspace/.venv/bin/python workspace/check-desktop.py
 통합 검사는 전용 소켓을 사용하고 이미 사용 중인 테스트 서버를 재사용하지 않습니다. Windows interop이 없으면 Windows 셸 검사는 SKIP로 보고합니다. 합성 입력 검사는 Windows의 실제 한글 IME 조합·붙여넣기 종단 검증을 대체하지 않습니다.
 
 `data/`에는 프로젝트 등록, 초안, 예약 메시지, 대화, 재시작 복구 화면이 저장됩니다. 가상환경·환경파일과 함께 Git에서 제외합니다. 원본 대화 캡처·인증정보를 소스/테스트 fixture/공개 문서에 넣지 마세요. `previews/`는 과거 합성 화면 예시이며 최신 화면과 다를 수 있습니다.
+
+## 디자인 점검 캡처
+
+`workspace/.venv/bin/python workspace/capture-design.py after`로 운영 세션에 접속하지 않는 합성 캡처를 생성합니다. 임시 프로젝트와 mock AI 화면만 사용합니다. `previews/design-before-48.svg`와 `design-after-48.svg`는 창 축소 시 입력창 잘림 수정 전후이며, 120열 화면과 승인·사이드바·검색 0건·Files·Git·Terminal 예시도 함께 있습니다. SVG는 브라우저에서 열 수 있고 글꼴에 따라 일부 아이콘 모양이 달라집니다. `before`는 수정 전 소스에서 실행할 때 쓰는 파일 이름입니다.

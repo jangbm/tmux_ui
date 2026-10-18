@@ -70,6 +70,15 @@ def native_mouse(owner,main,state_path):
         drag(location('unity',True),location('Workspace',True))
         poll(lambda:any(g['active'] and next(t['project'] for t in g['tabs'] if t['id']==g['active'])=='unity' for g in state()['groups']) and all(not {'unity','control'}.issubset({t['project'] for t in g['tabs']}) for g in state()['groups']))
         poll(lambda:any('Codex' in line for line in rows()))
+        # State is persisted before layout/resize settles; click the final coordinates.
+        previous=None; stable=0
+        def settled():
+            nonlocal previous,stable
+            current=rows()
+            stable=stable+1 if current==previous else 0
+            previous=current
+            return stable>=5
+        poll(settled)
         x,y=map(int,core.tmux_checked('display-message','-p','-t',main,'#{pane_left}|#{pane_top}').split('|'))
         row,line=next((i,line) for i,line in enumerate(rows()) if 'Codex' in line and '×' in line)
         click(x+cell_len(line[:line.rfind('×')]),y+row)

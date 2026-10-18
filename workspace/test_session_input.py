@@ -99,6 +99,9 @@ class LiveUITests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(panel.source_pane,'%7');self.assertFalse(panel.queue.armed)
                 for size in ((28,12),(160,45),(70,24)):
                     await pilot.resize_terminal(*size);await pilot.pause()
+                    self.assertLessEqual(app.views[tab['id']].region.right,size[0])
+                    self.assertLessEqual(composer.region.bottom,size[1])
+                    self.assertGreater(composer.region.height,0)
                 self.assertEqual(composer.text,'한글 입력\n다음 줄')
                 send.assert_not_called();control.assert_not_called()
                 self.assertIsNone(app._exception)

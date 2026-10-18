@@ -92,3 +92,40 @@ Screen, #stage, .editor-group, .project-view, .chat-panel, .thread { background:
 .single-line .composer-actions { width: 6; height: 1; layout: horizontal; }
 .single-line .send { margin-bottom: 0; }
 .copy-selection { width: 3; min-width: 3; height: 1; border: none; padding: 0; background: transparent; color: #a2b3c5; }
+
+/* Design audit: readable secondary text and consistent workbench states. */
+.tab-chip { min-width: 9; max-width: 25; margin-right: 1; }
+.tab-label { min-width: 4; max-width: 19; }
+.tab-chip.selected { border: round #91bfe5; border-bottom: none; }
+.tab-chip.selected .tab-label { color: #f0f4fa; text-style: bold; }
+.tab-chip.pinned { background: #2c3440; }
+.tab-chip.pinned.selected { background: #1b1d20; }
+.tab-chip.dragging { background: #354f68; border: round #b8dcfa; border-bottom: none; }
+.narrow-group .split-right, .narrow-group .split-below { display: none; }
+.chat-status, .composer-hint { color: #acb6c4; }
+.chat-heading { padding: 0; }
+.agent-name { margin-right: 1; }
+.agent-name.claude { color: #e9b39a; }
+.agent-name.codex { color: #a9cce9; }
+.source-busy .chat-status { color: #a9cce9; }
+.source-waiting .chat-status { color: #f0b39e; }
+.narrow-chat .chat-heading { align-vertical: top; }
+.narrow-chat .chat-status { position: absolute; offset: 0 1; width: 1fr; }
+.narrow-chat .agent-name { width: 1fr; }
+.narrow-chat .composer-hint { display: none; }
+.menu-controls { padding: 0; background: #2d3540; }
+.menu-key { width: 1fr; min-width: 3; margin-right: 0; color: #d4e6f5; }
+.queue-bar { margin: 0; }
+.queue-bar Button { width: 4; color: #d4e6f5; }
+.queue-bar .queue-cancel, .queue-bar .queue-toggle { width: 3; }
+.agent-grip, #group-grip { background: #3b4653; }
+.agent-grip:hover, #group-grip:hover { background: #91bfe5; }
+#drop-preview { background: #78a9d1 20%; border: solid #91bfe5; }
+.empty-note { height: auto; max-width: 60; padding: 0 2; color: #acb6c4; }
+.chat-error { color: #f0b39e; margin: 0; }
+.close-chat, .close-tab, .copy-selection { color: #acb6c4; }
+Button:focus { text-style: bold; tint: #91bfe5 12%; }
+
+.mode-toggle { width: 6; min-width: 6; }
+
+.queue-bar .queue-edit { width: 6; }
