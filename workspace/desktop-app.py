@@ -18,6 +18,7 @@ from textual.screen import ModalScreen
 from textual.containers import Horizontal, HorizontalScroll, Vertical, VerticalScroll
 from textual.widgets import Static, Button, TextArea, Markdown, Select, Input
 from message_queue import MessageQueue
+from open_tabs import OpenTabs
 from chat_backend import Conversation
 from desk_state import DeskState
 import core
@@ -591,6 +592,7 @@ class EditorGroup(Vertical):
             yield Button('◉',classes='restore-agents',tooltip='닫은 대화창 다시 열기')
             yield Button('◫',classes='split-right',tooltip='편집 그룹을 오른쪽으로 분할')
             yield Button('⊟',classes='split-below',tooltip='편집 그룹을 아래로 분할')
+            yield Button('⌄',classes='open-tabs',tooltip='열린 탭 목록 · Ctrl+P')
             yield Button('⋯',classes='tab-actions',tooltip='탭 메뉴 · 탭 우클릭')
         yield Static('',classes='group-body')
     def on_mount(self):
@@ -614,6 +616,8 @@ class EditorGroup(Vertical):
     def button(self,event):
         event.stop()
         group=self.app.state.group(self.group_id)
+        if event.button.has_class('open-tabs'):
+            self.app.action_open_tabs();return
         if not group['active']: return
         if event.button.has_class('tab-actions'):
             self.app.tab_menu(group['active']);return
@@ -644,7 +648,7 @@ class Stage(Vertical):
 
 class Desktop(App):
     CSS_PATH=core.ROOT/'desktop.tcss'
-    BINDINGS=[Binding('ctrl+pageup','previous_tab','이전 탭',priority=True),
+    BINDINGS=[Binding('ctrl+p','open_tabs','열린 탭',priority=True),Binding('ctrl+pageup','previous_tab','이전 탭',priority=True),
               Binding('ctrl+pagedown','next_tab','다음 탭',priority=True),
               Binding('ctrl+f','find_text','대화 찾기',priority=True),
               Binding('ctrl+c','stop_active','응답 중지',priority=True)]
@@ -662,6 +666,10 @@ class Desktop(App):
         with Stage(id='stage'):
             yield GroupGrip('',id='group-grip')
             yield Static('',id='drop-preview')
+    def action_open_tabs(self):
+        if len(self.screen_stack)>1: return
+        rows=[dict(id=t['id'],name=self.projects.get(t['project'],{}).get('name',t['project']),group=i+1,pinned=t.get('pinned',False)) for i,g in enumerate(self.state.groups) for t in g['tabs']]
+        self.push_screen(OpenTabs(rows,self.state.group()['active']),lambda tab:self.select_tab(tab) if tab and any(t['id']==tab for g in self.state.groups for t in g['tabs']) else None)
     def action_previous_tab(self): self.step_tab(-1)
     def action_next_tab(self): self.step_tab(1)
     def action_find_text(self):

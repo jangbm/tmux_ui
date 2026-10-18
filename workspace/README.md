@@ -111,3 +111,11 @@ TMW_SOCKET=tmux-ui-test workspace/.venv/bin/python workspace/check-desktop.py
 ## 디자인 점검 캡처
 
 `workspace/.venv/bin/python workspace/capture-design.py after`로 운영 세션에 접속하지 않는 합성 캡처를 생성합니다. 임시 프로젝트와 mock AI 화면만 사용합니다. `previews/design-before-48.svg`와 `design-after-48.svg`는 창 축소 시 입력창 잘림 수정 전후이며, 120열 화면과 승인·사이드바·검색 0건·Files·Git·Terminal 예시도 함께 있습니다. SVG는 브라우저에서 열 수 있고 글꼴에 따라 일부 아이콘 모양이 달라집니다. `before`는 수정 전 소스에서 실행할 때 쓰는 파일 이름입니다.
+
+## 열린 탭과 폴더 탐색
+
+- `Ctrl+P` 또는 탭줄 `⌄`: 모든 그룹의 열린 탭 목록. 이름 검색, ↑↓ 이동, Enter 선택, Esc 취소. 같은 이름의 탭은 그룹 번호로 구분합니다.
+- Files의 **펼치기**: 선택 폴더에서 최대 3단계·40폴더를 펼칩니다. **접기**: 선택 폴더와 하위 폴더를 접습니다. 파일을 선택했다면 부모 폴더에 적용합니다.
+- 폴더 상태는 프로젝트 경로별로 로컬 저장하여 전환·새로고침·재시작 뒤 복원합니다. Git에는 포함하지 않습니다.
+- 트리는 최대 깊이 8, 총 1,000노드, 폴더당 첫 200항목으로 제한합니다. 큰 폴더는 일부 항목이 생략되며 툴팁과 펼치기 알림에서 확인할 수 있습니다. 심볼릭 링크와 생성 폴더는 탐색하지 않습니다.
+- `workspace/.venv/bin/python workspace/capture-navigation.py`는 합성 예시만으로 탐색 화면을 캡처합니다. 이전 소스의 workspace 디렉터리를 인자로 주면 before 캡처를 생성합니다.

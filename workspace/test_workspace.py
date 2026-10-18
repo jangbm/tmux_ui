@@ -65,6 +65,10 @@ class ProjectTests(unittest.TestCase):
 
 class SidebarTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        state=tempfile.TemporaryDirectory(prefix='tmw-sidebar-state-')
+        self.addCleanup(state.cleanup)
+        state_patch=patch.object(core,'STATE',Path(state.name))
+        state_patch.start();self.addCleanup(state_patch.stop)
         # Sidebar interaction tests must not discover the host's real sessions.
         discovery=patch('live_tmux.refresh_connections',return_value=False)
         discovery.start();self.addCleanup(discovery.stop)
@@ -185,6 +189,8 @@ class SidebarTests(unittest.IsolatedAsyncioTestCase):
             with patch.object(core,'CONFIG',root/'projects.json'), patch.dict(os.environ,{'TMW_PROJECT':'p0'}):
                 for index in range(12): core.add(f'Project {index}',root/str(index),key=f'p{index}',claude=False,codex=False)
                 app=Sidebar()
+                # This test controls dock CSS directly; disable the periodic socket-derived reset.
+                app.sync_dock=lambda:None
                 async with app.run_test(size=(70,35)) as pilot:
                     await pilot.pause()
                     self.assertFalse(app.query_one('#project-tabs').display)

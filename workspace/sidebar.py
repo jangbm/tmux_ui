@@ -63,14 +63,7 @@ class ProjectTab(Static):
         else: self.app.open_project(self.project_id)
 
 
-class ProjectFiles(DirectoryTree):
-    ICON_NODE=''
-    ICON_NODE_EXPANDED=''
-    ICON_FILE=''
-    SKIP={'.git','.venv','venv','node_modules','__pycache__','Library','Temp','obj'}
-
-    def filter_paths(self,paths):
-        return [path for path in paths if path.name not in self.SKIP and not path.is_symlink()]
+from file_tree import ProjectFiles
 
 class ProjectTree(Tree):
     def render_label(self,node,base_style,style):
@@ -167,6 +160,8 @@ class Sidebar(App):
     #project-search:focus { border: round #78a9d1; }
     #project-filter { color: #c7d4e3; }
     #project-empty { display: none; height: auto; padding: 1; color: #acb6c4; }
+    #file-tools { height: 1; }
+    #file-tools Button { width: 1fr; min-width: 6; height: 1; border: none; padding: 0; background: #29333f; color: #c7d4e3; }
     #git-scroll { padding: 1; }
     #git-diff { height: 3; width: 1fr; min-width: 8; border: round #465567; background: #29333f; color: #c7d4e3; }
     #terminal-help { padding: 1; }
@@ -213,6 +208,9 @@ class Sidebar(App):
                 yield Static('',id='project-empty')
                 yield ProjectTree('PROJECTS',id='tree')
             with TabPane('Files',id='files-view'):
+                with Horizontal(id='file-tools'):
+                    yield Button('펼치기',id='files-expand',tooltip='선택 폴더에서 3단계 · 최대 40폴더 펼치기')
+                    yield Button('접기',id='files-collapse',tooltip='선택 폴더와 하위 폴더 접기')
                 yield Static('프로젝트를 선택하면 파일이 표시됩니다.',id='no-project')
                 yield ProjectFiles(core.ROOT/'data',id='files')
             with TabPane('Git',id='git-view'):
@@ -350,7 +348,11 @@ class Sidebar(App):
         tree=self.query_one('#files',ProjectFiles)
         tree.display=bool(project)
         self.query_one('#no-project').display=not project
-        if project: tree.path=Path(project['path'])
+        if project and tree.path!=Path(project['path']): tree.path=Path(project['path'])
+    @on(Button.Pressed,'#files-expand')
+    def expand_files(self): self.query_one('#files',ProjectFiles).expand_levels()
+    @on(Button.Pressed,'#files-collapse')
+    def collapse_files(self): self.query_one('#files',ProjectFiles).collapse_levels()
     def action_refresh(self):
         self.refresh_projects(force=True)
         self.query_one('#files',ProjectFiles).reload()
@@ -555,7 +557,7 @@ class Sidebar(App):
             self.query_one('#active-project',Static).update(selected['name'])
             self.refresh_files()
     def tick(self):
-        if len(self.screen_stack)>1: return
+        if len(self.screen_stack)>1 or not list(self.query('#active-project')): return
         self.dock_tick+=1
         if self.dock_tick%10==0: self.sync_dock()
         if self.dock_tick%3==0: self.sync_project_label()
