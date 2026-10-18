@@ -1,0 +1,3 @@
+#!/bin/sh
+# Shared status cache; capture never runs from a tmux status format.
+exec /home/jang/projects/tmux_ui/workspace/.venv/bin/python /home/jang/projects/tmux_ui/workspace/watcher.py "$@"

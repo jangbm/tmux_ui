@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Workspace · Demo Web</title>
+<style>
+  :root { color-scheme: dark; font: 16px system-ui, sans-serif; }
+  body { margin: 0; background: #181818; color: #d6d6d6; }
+  main { max-width: 640px; margin: 12vh auto; padding: 32px; }
+  small { color: #a3bea8; letter-spacing: .15em; }
+  h1 { font-size: 44px; font-weight: 600; }
+  button { border: 1px solid #536557; border-radius: 8px;
+    background: #303a32; color: #d6d6d6; padding: 12px 18px; cursor: pointer; }
+  output { display: block; margin-top: 20px; color: #a6bfd8; }
+</style>
+<main>
+  <small>WORKSPACE / DEMO WEB</small>
+  <h1>작은 시작, 두 번째 탭.</h1>
+  <p>이 프로젝트를 Python 프로젝트 옆이나 아래에 분할해 보세요.</p>
+  <button id="counter">클릭해 보기</button>
+  <output id="result">아직 클릭하지 않았어요.</output>
+</main>
+<script>
+  let count = 0;
+  document.querySelector('#counter').addEventListener('click', () => {
+    document.querySelector('#result').textContent = `${++count}번 클릭했습니다.`;
+  });
+</script>
+</html>

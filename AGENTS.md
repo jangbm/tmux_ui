@@ -10,7 +10,7 @@
    - loop: `/mnt/d/projects/kid_app_loop/loop/runs/runner_state.json`의 state·laps_today
    - 5~10초마다 스크립트(`bin/`)가 계산해 파일에 쓰고, 상태바는 `#(cat 파일)`로 읽기만 한다(상태바 갱신마다 capture-pane을 돌리지 않게).
 2. **세션별 색**: 상태바 색을 Windows Terminal 탭 색과 맞춤
-   video #C0504D · gaussian #4F81BD · unity #9BBB59 · print3d #F79646 · control #8064A2 · marketing #4BACC6 · design #2F8F82 · ebook #B5577A · stock #D4A017 · tmux_ui(새로, 정해서 알림)
+   video #C0504D · gaussian #4F81BD · unity #9BBB59 · print3d #F79646 · control #8064A2 · marketing #4BACC6 · design #2F8F82 · ebook #B5577A · stock #D4A017 · tmux_ui #5B6B7A
 3. **복사 개선**: 마우스 모드에서 드래그 선택 → Windows 클립보드(`clip.exe`, UTF-8 한글 깨짐 주의)
 - 선택: 4) `Ctrl+b s` 세션 목록 미리보기 팝업, 5) Ctrl+D·`exit` 실수로 세션 종료 방지
 

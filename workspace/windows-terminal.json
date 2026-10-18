@@ -1,0 +1,49 @@
+{
+  "profiles": [
+    {
+      "guid": "{9c75084c-f8ea-5f93-bcd4-e70decd0f125}",
+      "name": "Tmux Workspace",
+      "commandline": "wsl.exe -d Ubuntu -- bash -lc \"cd /home/jang/projects/tmux_ui/workspace && ./launch.sh\"",
+      "colorScheme": "Workspace Graphite",
+      "font": {
+        "face": "Cascadia Mono",
+        "size": 12,
+        "weight": "normal",
+        "cellHeight": "1.15"
+      },
+      "padding": "12, 10, 12, 10",
+      "cursorShape": "bar",
+      "cursorColor": "#B7CDB9",
+      "opacity": 100,
+      "useAcrylic": false,
+      "tabColor": "#5B6B7A",
+      "antialiasingMode": "grayscale",
+      "hidden": false
+    }
+  ],
+  "schemes": [
+    {
+      "name": "Workspace Graphite",
+      "background": "#181818",
+      "foreground": "#D6D6D6",
+      "cursorColor": "#B7CDB9",
+      "selectionBackground": "#384239",
+      "black": "#202020",
+      "red": "#DC9999",
+      "green": "#A3BEA8",
+      "yellow": "#D9BC88",
+      "blue": "#A6BFD8",
+      "purple": "#B8AED1",
+      "cyan": "#9FC7C1",
+      "white": "#D6D6D6",
+      "brightBlack": "#909090",
+      "brightRed": "#E8AEAE",
+      "brightGreen": "#B7CDB9",
+      "brightYellow": "#E5CDA5",
+      "brightBlue": "#BED2E6",
+      "brightPurple": "#CDC4DF",
+      "brightCyan": "#B6D9D3",
+      "brightWhite": "#EEEEEE"
+    }
+  ]
+}
