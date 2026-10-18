@@ -74,3 +74,21 @@ MarkdownFence { background: #202923; }
 .menu-key:hover { background: #3e5669; }
 .shutdown-ai { width: 3; min-width: 3; height: 1; padding: 0; border: none; background: transparent; color: #b78c7d; }
 .shutdown-ai:hover { color: #f0a28e; background: #3d302d; }
+/* Neutral workbench; color is reserved for focus, AI status and results. */
+Screen, #stage, .editor-group, .project-view, .chat-panel, .thread { background: #1b1d20; color: #d8dce2; }
+.group-header { background: #22252a; border-bottom: solid #383d45; }
+.active-group .group-header { background: #252a31; }
+.tab-chip { background: #22252a; border: round #3b414a; border-bottom: none; }
+.tab-chip.selected { background: #1b1d20; border: round #78a9d1; border-bottom: none; }
+.tab-label, .source-message { color: #b9c0ca; }
+.composer-box, .composer { background: #25292f; }
+.thread-search { height: 3; border: round #4a6077; padding: 0 1; }
+.jump-latest { height: 1; width: auto; min-width: 14; border: none; padding: 0 1; background: #2e3b4a; color: #b9d6ef; }
+.queue-bar { height: 1; margin: 0 1; background: #252d36; }
+.queue-summary { width: 1fr; height: 1; color: #afc5da; }
+.queue-bar Button { height: 1; width: 5; min-width: 3; padding: 0; border: none; background: #344151; }
+.source-busy .composer-hint { color: #9cbfdf; }
+.source-waiting .composer-hint { color: #e6a295; }
+.single-line .composer-actions { width: 6; height: 1; layout: horizontal; }
+.single-line .send { margin-bottom: 0; }
+.copy-selection { width: 3; min-width: 3; height: 1; border: none; padding: 0; background: transparent; color: #a2b3c5; }

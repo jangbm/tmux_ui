@@ -9,13 +9,15 @@ import time
 import shutil
 from pathlib import Path
 from rich.text import Text
+from rich.cells import cell_len
 from terminal_render import chat_terminal_text
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.screen import ModalScreen
 from textual.containers import Horizontal, HorizontalScroll, Vertical, VerticalScroll
-from textual.widgets import Static, Button, TextArea, Markdown, Select
+from textual.widgets import Static, Button, TextArea, Markdown, Select, Input
+from message_queue import MessageQueue
 from chat_backend import Conversation
 from desk_state import DeskState
 import core
@@ -53,18 +55,22 @@ class Thread(VerticalScroll):
         return True
     def action_menu_key(self,key): self.parent.run_control(key.title())
     def on_mouse_down(self,event):
-        if event.button==1: self.focus()
+        if event.button==1: self.focus(scroll_visible=False)
     def on_mouse_up(self,event):
         if event.button==1: self.call_after_refresh(self.copy_selection)
     def copy_selection(self):
         text=self.screen.get_selected_text()
-        if text: self.app.copy_to_clipboard(text)
+        if text:
+            self.parent.last_selection=text
+            self.app.copy_to_clipboard(text)
     def watch_virtual_size(self,old,new):
         if self.following: self.call_after_refresh(self.scroll_end,animate=False)
     def watch_scroll_y(self,old,new):
         super().watch_scroll_y(old,new)
-        if new<old: self.following=False
-        elif new>=self.max_scroll_y-1: self.following=True
+        if new>=self.max_scroll_y-1: self.following=True
+        elif new<old: self.following=False
+        if self.parent.is_mounted:
+            self.parent.query_one('.jump-latest').display=not self.following
 
 
 class MessageCard(Vertical):
@@ -101,6 +107,23 @@ class ShutdownConfirm(ModalScreen):
         event.stop(); self.dismiss(event.button.id=='confirm-shutdown')
 
 
+class TabActions(ModalScreen):
+    DEFAULT_CSS='''
+    TabActions { align: center middle; background: #00000070; }
+    TabActions > Vertical { width: 34; height: auto; padding: 1; background: #24272c; border: round #596471; }
+    TabActions Button { width: 1fr; height: 1; border: none; margin: 0 0 1 0; background: #2d3239; }
+    '''
+    BINDINGS=[Binding('escape','cancel',show=False)]
+    def __init__(self,pinned): super().__init__();self.pinned=pinned
+    def compose(self):
+        with Vertical():
+            for key,label in [('pin','고정 해제' if self.pinned else '탭 고정'),('right','오른쪽으로 분할'),('below','아래로 분할'),('move','다른 그룹으로 이동'),('others','다른 탭 닫기 (고정 탭 유지)'),('close','이 탭 닫기')]:
+                yield Button(label,name=key)
+    def action_cancel(self): self.dismiss(None)
+    @on(Button.Pressed)
+    def choose(self,event): event.stop();self.dismiss(event.button.name)
+
+
 class ChatPanel(Vertical):
     def __init__(self,project,agent,tab_id):
         super().__init__(classes='chat-panel')
@@ -109,6 +132,7 @@ class ChatPanel(Vertical):
         self.busy=False; self.reply=''; self.error=''; self.source=''; self.source_pane=None
         self.is_live=project.get('kind')=='tmux-live'
         self.source_pid=None; self.suggestion=''; self.target_options=None; self.source_menu=False
+        self.current_source={};self.queue=MessageQueue();self.search_term='';self.last_selection=''
         self.rendered_messages=None
         self.history_signature=None; self.draft_timer=None; self.control_lock=asyncio.Lock()
         self.draft_path=core.STATE/'desk-drafts'/f"{project['id']}-{agent}-{tab_id}.json"
@@ -116,10 +140,12 @@ class ChatPanel(Vertical):
         with Horizontal(classes='chat-heading'):
             yield Static(('◉  ' if self.agent=='claude' else '◇  ')+self.agent.title(),classes='agent-name')
             yield Static('tmux 연결 중…' if self.is_live else '새 대화',classes='chat-status')
+            yield Button('⧉',classes='copy-selection',tooltip='선택한 글 복사 · Ctrl+C')
             if self.is_live and self.agent=='claude':
                 yield Button('⇧Tab',classes='mode-toggle',tooltip='Shift+Tab · 기존 Claude 모드 전환')
             if self.is_live: yield Button('⏻',classes='shutdown-ai',tooltip='선택한 AI 종료')
             yield Button('×',classes='close-chat',tooltip='이 대화창 닫기')
+        yield Input(placeholder='현재 화면에서 찾기 · Esc 닫기',classes='thread-search')
         if self.is_live:
             yield Select([],prompt='연결할 AI 창 선택',classes='source-target')
         with Thread(classes='thread'):
@@ -127,10 +153,16 @@ class ChatPanel(Vertical):
             yield Vertical(classes='messages')
             yield Static('',classes='pending-reply',markup=False)
             yield Static('',classes='chat-error',markup=False)
+        yield Button('↓ 최신 내용',classes='jump-latest')
         if self.is_live:
             with Horizontal(classes='menu-controls'):
                 for label,key in [('↑','Up'),('↓','Down'),('←','Left'),('→','Right'),('선택','Enter'),('취소','Escape')]:
                     yield Button(label,name=key,classes='menu-key',tooltip=key+' · 현재 tmux 선택 메뉴')
+            with Horizontal(classes='queue-bar'):
+                yield Static('',classes='queue-summary',markup=False)
+                yield Button('▶',classes='queue-toggle',tooltip='대기열 시작 / 일시정지')
+                yield Button('수정',classes='queue-edit',tooltip='첫 메시지를 입력창으로 가져오기')
+                yield Button('×',classes='queue-cancel',tooltip='첫 대기 메시지 취소')
         with Horizontal(classes='composer-box'):
             yield Composer('',classes='composer',placeholder=self.agent.title()+'에게 메시지 보내기…',show_line_numbers=False,soft_wrap=True)
             with Vertical(classes='composer-actions'):
@@ -138,8 +170,14 @@ class ChatPanel(Vertical):
                 yield Button('■',classes='stop',tooltip='응답 중지',disabled=True)
         yield Static(('Enter 전송 · Tab 추천 · ⇧Tab 모드' if self.agent=='claude' else 'Enter 전송 · Tab 추천') if self.is_live else 'Enter 전송 · Shift+Enter 줄바꿈',classes='composer-hint')
     def on_mount(self):
-        try: self.query_one('.composer',Composer).load_text(json.loads(self.draft_path.read_text()).get('text',''))
+        try:
+            saved=json.loads(self.draft_path.read_text())
+            self.query_one('.composer',Composer).load_text(saved.get('text',''))
+            self.queue=MessageQueue(saved.get('queue',[]))
         except (OSError,ValueError): pass
+        self.query_one('.thread-search').display=False
+        self.query_one('.jump-latest').display=False
+        self.render_queue()
         if self.is_live: self.query_one('.source-target').display=False
         self.query_one('.source-message').display=False
         self.render_messages()
@@ -153,17 +191,62 @@ class ChatPanel(Vertical):
     @on(TextArea.Changed)
     def draft_changed(self,event):
         event.stop()
+        self.size_composer()
         if self.draft_timer: self.draft_timer.stop()
         self.draft_timer=self.set_timer(.4,self.save_draft)
     def save_draft(self):
         composer=next(iter(self.query('.composer')),None)
-        if composer: core.atomic(self.draft_path,{'text':composer.text})
+        if composer: core.atomic(self.draft_path,{'text':composer.text,'queue':self.queue.items})
     def on_resize(self,event):
         self.set_class(event.size.height<14,'compact-chat')
+        if list(self.query('.composer')): self.size_composer()
+    def size_composer(self):
+        composer=self.query_one('.composer',Composer)
+        width=max(10,composer.content_size.width)
+        lines=min(4,max(1,sum(max(1,(cell_len(line)+width-1)//width) for line in composer.text.split('\n'))))
+        self.set_class(lines==1,'single-line')
+        composer.styles.height=lines
+        self.query_one('.composer-box').styles.height=lines+2
     def latest(self):
         thread=self.query_one('.thread',Thread)
         thread.following=True
+        self.query_one('.jump-latest').display=False
         self.call_after_refresh(thread.scroll_end,animate=False)
+    def render_queue(self):
+        if not self.is_live: return
+        self.query_one('.queue-bar').display=bool(self.queue.items)
+        if self.queue.items:
+            first=self.queue.items[0]['text'].replace('\n',' ')
+            self.query_one('.queue-summary',Static).update(f"대기 {len(self.queue.items)} · "+('자동' if self.queue.armed else '일시정지')+' · '+first[:50])
+        self.query_one('.queue-toggle',Button).label='Ⅱ' if self.queue.armed else '▶'
+    def queue_message(self):
+        composer=self.query_one('.composer',Composer);message=composer.text.strip()
+        if not message or not self.source_pane or not self.source_pid: return
+        was_empty=not self.queue.items
+        self.queue.add(message,self.source_pane,self.source_pid)
+        if was_empty and self.current_source.get('state')=='busy':
+            self.queue.armed=True;self.queue.saw_busy=True
+        composer.load_text('');self.save_draft();self.render_queue()
+        self.app.notify('응답이 끝난 뒤 보낼 대기열에 추가했습니다.',timeout=2)
+    def edit_queued(self):
+        if not self.queue.items or self.busy: return
+        composer=self.query_one('.composer',Composer)
+        if composer.text.strip():
+            self.app.notify('현재 초안을 먼저 보내거나 비워 주세요.',timeout=3);return
+        self.queue.pause();composer.load_text(self.queue.items.pop(0)['text'])
+        composer.focus();self.save_draft();self.render_queue()
+    def render_source_text(self):
+        text=chat_terminal_text(self.source.rstrip())
+        if self.search_term: text.highlight_words([self.search_term],style='bold black on #d9bd72',case_sensitive=False)
+        self.query_one('.source-message',Static).update(text)
+    @on(Input.Changed,'.thread-search')
+    def search_changed(self,event):
+        event.stop();self.search_term=event.value
+        if self.is_live: self.render_source_text()
+    def on_key(self,event):
+        if event.key=='escape' and self.query_one('.thread-search').has_focus:
+            event.stop();self.query_one('.thread-search').display=False
+            self.search_term='';self.render_source_text();self.query_one('.thread').focus()
     def sync_history(self):
         if self.busy or self.is_live: return
         try:
@@ -200,11 +283,13 @@ class ChatPanel(Vertical):
     def target_changed(self,event):
         event.stop()
         if event.value is Select.BLANK: return
+        if self.source_pane and self.source_pane!=str(event.value):
+            self.queue.pause();self.render_queue()
         self.source_pane=str(event.value); self.source_pid=None; self.suggestion=''
         self.refresh_source()
     @work(exclusive=True,group='source')
     async def refresh_source(self):
-        if not self.is_live or not self.is_on_screen: return
+        if not self.is_live or (not self.is_on_screen and not self.queue.armed): return
         try:
             options=await asyncio.to_thread(session_input.targets,self.project,self.agent)
             choices=tuple((p['label'],p['id']) for p in options)
@@ -215,16 +300,27 @@ class ChatPanel(Vertical):
                 if self.source_pane and any(p['id']==self.source_pane for p in options): selector.value=self.source_pane
             if not self.source_pane and len(options)==1: self.source_pane=options[0]['id']
             current=await asyncio.to_thread(session_input.snapshot,self.project,self.agent,self.source_pane)
+            self.current_source=current
             self.source_pane=current['id']; self.source_pid=current['pid']
             self.source_menu=current.get('menu',False)
             self.query_one('.menu-controls').display=self.source_menu
-            self.query_one('.composer-hint',Static).update('↑↓ 이동 · Enter 선택 · Esc 취소' if self.source_menu else ('Enter 전송 · Tab 추천 · ⇧Tab 모드' if self.agent=='claude' else 'Enter 전송 · Tab 추천'))
+            hint=('승인·선택 대기 · ↑↓ 이동 · Enter 선택 · Esc 취소' if self.source_menu else
+                '작업 중 · Enter로 다음 메시지 대기열에 추가' if current['state']=='busy' else
+                '원본 입력 남음 · 원본에서 전송하거나 지워 주세요' if current.get('detail')=='draft' else
+                '질문·확인 대기 · 원본 안내를 처리해 주세요' if current['state']=='waiting' else
+                '연결·준비 상태 확인 중 · 초안은 보관됩니다' if current['state']!='idle' else
+                '준비 · Enter 전송 · Tab 추천'+(' · ⇧Tab 모드' if self.agent=='claude' else ''))
+            self.query_one('.composer-hint',Static).update(hint)
+            self.set_class(current['state']=='busy','source-busy')
+            self.set_class(current['state']=='waiting','source-waiting')
             self.suggestion=current['suggestion']
             self.query_one('.composer',Composer).placeholder=self.suggestion or self.agent.title()+'에게 메시지 보내기…'
             state={'busy':'작업 중','idle':'준비','waiting':'입력 대기','unknown':'상태 확인 중','error':'확인 필요'}.get(current['state'],'연결됨')
             label=self.project['source_session']+' · '+state+(' · '+current['mode'] if current['mode'] else '')
             self.query_one('.chat-status',Static).update(label)
-            self.query_one('.send',Button).disabled=self.busy or current['state']!='idle'
+            self.query_one('.send',Button).disabled=self.busy or current['state'] not in ('idle','busy')
+            self.query_one('.send',Button).label='+' if current['state']=='busy' else '↑'
+            self.query_one('.send',Button).tooltip='다음 메시지 대기열에 추가' if current['state']=='busy' else '현재 tmux 세션에 보내기 · Enter'
             self.query_one('.stop',Button).disabled=self.busy or current['state']!='busy'
             if self.agent=='claude': self.query_one('.mode-toggle',Button).disabled=self.busy or current['state']!='idle'
             output=current['screen']
@@ -235,9 +331,17 @@ class ChatPanel(Vertical):
                 self.query_one('.source-message').display=bool(output.strip())
                 thread=self.query_one('.thread',VerticalScroll)
                 follow=thread.scroll_y>=thread.max_scroll_y-2 or not thread.max_scroll_y
-                self.query_one('.source-message',Static).update(chat_terminal_text(output.rstrip()))
+                self.render_source_text()
                 if follow: self.latest()
+                else:
+                    self.query_one('.jump-latest',Button).label='↓ 새 내용 · 최신으로'
+                    self.query_one('.jump-latest').display=True
+            if not self.busy and self.queue.ready(current):
+                self.busy=True;self.queue.saw_busy=False
+                self.send_to_source(self.queue.items[0]['text'],queued=True)
+            self.render_queue()
         except (OSError,ValueError,RuntimeError,asyncio.TimeoutError,subprocess.TimeoutExpired) as error:
+            self.current_source={};self.queue.pause();self.render_queue()
             self.source_menu=False; self.query_one('.menu-controls').display=False
             self.source=''; self.source_pid=None
             self.query_one('.source-message',Static).update('')
@@ -248,10 +352,12 @@ class ChatPanel(Vertical):
             self.query_one('.stop',Button).disabled=True
 
     def stop_response(self):
+        self.queue.pause();self.render_queue()
         if self.is_live: self.run_control('stop')
         else: self.conversation.stop(); self.workers.cancel_group(self,'turn')
     def confirm_shutdown(self):
         if self.busy or not self.source_pane or not self.source_pid: return
+        self.queue.pause();self.render_queue()
         pane,pid=self.source_pane,self.source_pid
         label=f"{self.project['source_session']} · {self.agent.title()} · {pane}"
         self.app.push_screen(ShutdownConfirm(label),lambda confirmed:self.shutdown_ai(pane,pid) if confirmed else None)
@@ -280,16 +386,25 @@ class ChatPanel(Vertical):
         except (OSError,ValueError,RuntimeError,subprocess.TimeoutExpired) as error: self.error=str(error)
         self.render_messages()
     @work(exclusive=True,group='live-send')
-    async def send_to_source(self,message):
+    async def send_to_source(self,message,queued=False):
         composer=self.query_one('.composer',Composer)
         try:
             if not self.source_pane or not self.source_pid: raise ValueError('먼저 AI 창을 연결해 주세요.')
-            await asyncio.to_thread(session_input.send,self.project,self.agent,self.source_pane,self.source_pid,message)
-            if composer.text.strip()==message: composer.load_text(''); self.save_draft()
+            pane,pid=self.source_pane,self.source_pid
+            if queued:
+                item=self.queue.items[0];pane,pid=item['pane'],item['pid']
+                item['attempted']=True;self.save_draft()
+            await asyncio.to_thread(session_input.send,self.project,self.agent,pane,pid,message)
+            if queued: self.queue.items.pop(0)
+            elif composer.text.strip()==message: composer.load_text('')
+            self.save_draft();self.render_queue()
             self.app.notify(self.project['source_session']+' · '+self.agent.title()+'에 전송했습니다',timeout=2)
             self.error=''
             self.latest()
-        except (OSError,ValueError,RuntimeError,subprocess.TimeoutExpired) as error: self.error=str(error)
+        except (OSError,ValueError,RuntimeError,subprocess.TimeoutExpired) as error:
+            self.error=str(error)
+            if queued:
+                self.queue.pause();self.save_draft();self.render_queue()
         finally:
             self.busy=False; self.render_messages(); self.refresh_source()
 
@@ -302,8 +417,26 @@ class ChatPanel(Vertical):
         elif event.button.has_class('stop'): self.stop_response()
         elif event.button.has_class('mode-toggle'): self.run_control('mode')
         elif event.button.has_class('menu-key'): self.run_control(event.button.name)
+        elif event.button.has_class('jump-latest'): self.screen.clear_selection();self.latest();self.refresh_source()
+        elif event.button.has_class('copy-selection'):
+            selection=self.screen.get_selected_text() or self.last_selection
+            if selection: self.app.copy_to_clipboard(selection)
+            else: self.app.notify('내용창에서 복사할 글을 드래그해 주세요.',timeout=2)
+        elif event.button.has_class('queue-edit'): self.edit_queued()
+        elif event.button.has_class('queue-cancel'):
+            if self.queue.items and not self.busy:
+                self.queue.items.pop(0);self.save_draft();self.render_queue()
+        elif event.button.has_class('queue-toggle'):
+            if self.busy: return
+            try:
+                if self.queue.armed: self.queue.pause()
+                else: self.queue.resume(self.current_source)
+                self.render_queue()
+            except ValueError as error: self.error=str(error);self.render_messages()
     def send_message(self):
         if self.busy: return
+        if self.is_live and self.current_source.get('state')=='busy':
+            self.queue_message();return
         if self.is_live and self.source_menu:
             self.error='선택 메뉴가 열려 있습니다. 선택/취소 버튼으로 먼저 닫아 주세요. 작성 중인 입력은 보관됩니다.'
             self.render_messages(); return
@@ -428,11 +561,15 @@ class TabChip(Horizontal):
         super().__init__(classes='tab-chip'+(' selected' if active else ''))
         self.tab_id=entry['id']
         self.project=project
+        self.pinned=entry.get('pinned',False)
     def compose(self)->ComposeResult:
-        yield TabLabel(self.project['name'],classes='tab-label',markup=False)
+        pending=any(s.get('pending') for s in self.project.get('source_states',{}).values())
+        yield TabLabel(('◆ ' if self.pinned else '')+self.project['name']+(' ●' if pending else ''),classes='tab-label',markup=False)
         yield Button('×',classes='close-tab',tooltip='탭 닫기')
     @on(Button.Pressed,'.close-tab')
     def close(self,event): event.stop(); self.app.close_tab(self.tab_id)
+    def on_mouse_down(self,event):
+        if event.button==3: event.stop();self.app.tab_menu(self.tab_id)
 
 
 class EditorGroup(Vertical):
@@ -444,13 +581,14 @@ class EditorGroup(Vertical):
             yield Button('◉',classes='restore-agents',tooltip='닫은 대화창 다시 열기')
             yield Button('◫',classes='split-right',tooltip='편집 그룹을 오른쪽으로 분할')
             yield Button('⊟',classes='split-below',tooltip='편집 그룹을 아래로 분할')
+            yield Button('⋯',classes='tab-actions',tooltip='탭 메뉴 · 탭 우클릭')
         yield Static('',classes='group-body')
     def on_mount(self):
         self.rebuild(self.app.state.group(self.group_id))
         self.call_after_refresh(self.app.finish_render)
     def rebuild(self,group):
         if not list(self.query('.group-tabs')): return
-        signature=(group['active'],tuple((t['id'],t['project']) for t in group['tabs']))
+        signature=(group['active'],tuple((t['id'],t['project'],t.get('pinned',False),any(s.get('pending') for s in self.app.projects.get(t['project'],{}).get('source_states',{}).values())) for t in group['tabs']))
         if signature==self.signature: return
         self.signature=signature
         strip=self.query_one('.group-tabs',HorizontalScroll)
@@ -461,6 +599,8 @@ class EditorGroup(Vertical):
         event.stop()
         group=self.app.state.group(self.group_id)
         if not group['active']: return
+        if event.button.has_class('tab-actions'):
+            self.app.tab_menu(group['active']);return
         if event.button.has_class('restore-agents'):
             _,tab=self.app.state.locate(group['active'])
             tab['hidden']=[]
@@ -484,6 +624,7 @@ class Desktop(App):
     CSS_PATH=core.ROOT/'desktop.tcss'
     BINDINGS=[Binding('ctrl+pageup','previous_tab','이전 탭',priority=True),
               Binding('ctrl+pagedown','next_tab','다음 탭',priority=True),
+              Binding('ctrl+f','find_text','대화 찾기',priority=True),
               Binding('ctrl+c','stop_active','응답 중지',priority=True)]
     def __init__(self,workspace,state=None,publish=True):
         os.environ.pop('NO_COLOR',None)
@@ -501,6 +642,34 @@ class Desktop(App):
             yield Static('',id='drop-preview')
     def action_previous_tab(self): self.step_tab(-1)
     def action_next_tab(self): self.step_tab(1)
+    def action_find_text(self):
+        if len(self.screen_stack)>1: return
+        focused=self.focused
+        panel=next((p for p in focused.ancestors_with_self if isinstance(p,ChatPanel)),None) if focused else None
+        if panel is None:
+            view=self.views.get(self.state.group()['active'])
+            panel=next((p for p in view.panels.values() if p.display),None) if view else None
+        if panel and panel.is_live:
+            search=panel.query_one('.thread-search',Input);search.display=True;search.focus()
+    def tab_menu(self,tab_id):
+        _,tab=self.state.locate(tab_id)
+        self.push_screen(TabActions(tab.get('pinned',False)),lambda action:self.apply_tab_action(tab_id,action))
+    def apply_tab_action(self,tab_id,action):
+        if not action: return
+        group,tab=self.state.locate(tab_id)
+        if action=='pin':
+            tab['pinned']=not tab.get('pinned',False)
+            group['tabs'].sort(key=lambda t:not t.get('pinned',False));self.render_state()
+        elif action in ('right','below'): self.split_tab(tab_id,action,copy=True)
+        elif action=='move':
+            other=next((g for g in self.state.groups if g['id']!=group['id']),None)
+            if other: self.state.move(tab_id,other['id']);self.render_state()
+            else: self.split_tab(tab_id,'right')
+        elif action=='close': self.close_tab(tab_id)
+        elif action=='others':
+            for item in list(group['tabs']):
+                if item['id']!=tab_id and not item.get('pinned'): self.closed[item['id']]=self.state.close(item['id'])
+            self.render_state()
     def step_tab(self,offset):
         group=self.state.group()
         if group['tabs']:
@@ -537,6 +706,8 @@ class Desktop(App):
         self.projects={p['id']:p for p in core.projects()}
         for view in self.views.values():
             if view.project['id'] in self.projects: view.sync_project(self.projects[view.project['id']])
+        for group in self.state.groups:
+            if group['id'] in self.groups: self.groups[group['id']].rebuild(group)
     def persist(self):
         self.state.value['closed']=list(self.closed.values())
         core.atomic(self.path,self.state.value)
@@ -546,7 +717,7 @@ class Desktop(App):
                 _,tab=self.state.locate(group['active'])
                 core.tmux('set-option','-t',core.session_id(self.workspace['id']),'@tmw_chat_project',tab['project'])
     def render_state(self):
-        stage=self.query_one('#stage')
+        stage=self.screen_stack[0].query_one('#stage')
         for group_id,widget in list(self.groups.items()):
             if not any(g['id']==group_id for g in self.state.groups): widget.remove(); del self.groups[group_id]
         for group in self.state.groups:
@@ -569,15 +740,15 @@ class Desktop(App):
             self.focus_tab=None
             if view:
                 panel=next((p for p in view.panels.values() if p.display),None)
-                if panel: panel.query_one('.thread').focus()
+                if panel: panel.query_one('.thread').focus(scroll_visible=False)
     def place_groups(self):
         if not self.is_mounted: return
-        stage=self.query_one('#stage'); width,height=stage.size
+        stage=self.screen_stack[0].query_one('#stage'); width,height=stage.size
         if width<1 or height<4: return
         groups=self.state.groups; stacked=self.state.value['axis']=='below'
         ratio=self.state.value.get('ratio',.5)
         rects=[(0,0,width,height)]
-        grip=self.query_one('#group-grip'); grip.display=len(groups)==2
+        grip=self.screen_stack[0].query_one('#group-grip'); grip.display=len(groups)==2
         if len(groups)==2:
             extent=(height if stacked else width)-1; first=max(4,min(extent-4,int(extent*ratio))); second=extent-first
             rects=[(0,0,width,first),(0,first+1,width,second)] if stacked else [(0,0,first,height),(first+1,0,second,height)]
@@ -652,7 +823,7 @@ class Desktop(App):
                 for tab in list(group['tabs']): self.close_tab(tab['id'])
         except (OSError,ValueError,RuntimeError,KeyError): pass
     def hit_group(self,x,y):
-        stage=self.query_one('#stage'); x-=stage.region.x; y-=stage.region.y
+        stage=self.screen_stack[0].query_one('#stage'); x-=stage.region.x; y-=stage.region.y
         for key,(gx,gy,w,h) in self.rectangles.items():
             if gx<=x<gx+w and gy<=y<gy+h: return key,x-gx,y-gy,w,h
         return None
@@ -671,7 +842,7 @@ class Desktop(App):
         else: edge='center'
         return key,edge,None,False
     def preview_drop(self,x,y):
-        target=self.drop_target(x,y); overlay=self.query_one('#drop-preview')
+        target=self.drop_target(x,y); overlay=self.screen_stack[0].query_one('#drop-preview')
         if not target or target[1]=='tab': overlay.display=False; return
         key,edge,_,_=target; gx,gy,w,h=self.rectangles[key]; gy+=3; h-=3
         if edge=='left': w=max(1,w//2)
@@ -679,7 +850,7 @@ class Desktop(App):
         elif edge=='above': h=max(1,h//2)
         elif edge=='below': gy+=h//2; h=max(1,h-h//2)
         overlay.styles.offset=(gx,gy); overlay.styles.width=w; overlay.styles.height=h; overlay.display=True
-    def clear_drop(self): self.query_one('#drop-preview').display=False
+    def clear_drop(self): self.screen_stack[0].query_one('#drop-preview').display=False
     def drop_tab(self,tab_id,x,y):
         target=self.drop_target(x,y)
         if not target: return

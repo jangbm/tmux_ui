@@ -70,6 +70,12 @@ def git_snapshot(path):
                    env=env,timeout=1)
         snapshot={'branch':branch.stdout.strip() or 'Detached HEAD',
                   'staged':0,'modified':0,'untracked':0,'conflicts':0,'files':[]}
+        tracking=run(['git','-C',str(path),'rev-parse','--abbrev-ref','@{upstream}'],env=env,timeout=1)
+        snapshot['upstream']=tracking.stdout.strip() if tracking.returncode==0 else None
+        if snapshot['upstream']:
+            counts=run(['git','-C',str(path),'rev-list','--left-right','--count','HEAD...@{upstream}'],env=env,timeout=1)
+            if counts.returncode==0:
+                snapshot['ahead'],snapshot['behind']=map(int,counts.stdout.split())
         entries=result.stdout.split('\0')
         index=0
         while index<len(entries):

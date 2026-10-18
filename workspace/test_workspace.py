@@ -74,6 +74,35 @@ class SidebarTests(unittest.IsolatedAsyncioTestCase):
         collector.start()
         self.addCleanup(collector.stop)
 
+    async def test_project_search_filters_and_pin_use_selected_project(self):
+        with tempfile.TemporaryDirectory() as tmp,patch.object(core,'CONFIG',Path(tmp)/'projects.json'),patch.object(core,'STATE',Path(tmp)/'state'),patch.dict(os.environ,{'TMW_PROJECT':'owner'}):
+            owner=dict(id='owner',name='Workspace',path=tmp,agents={},navigation_hidden=True)
+            busy=dict(id='live-one',name='control',path=tmp,kind='tmux-live',source_agents={'claude':1},source_states={'claude':{'state':'busy'}},agents={})
+            approval=dict(id='live-two',name='marketing',path=tmp,kind='tmux-live',source_agents={'claude':1},source_states={'claude':{'state':'waiting','pending':'approval'}},agents={})
+            core.atomic(core.CONFIG,[owner,approval,busy])
+            with patch('core.chat_project',return_value=busy):
+                app=Sidebar()
+                async with app.run_test(size=(50,40)) as pilot:
+                    await pilot.pause()
+                    app.query_one('#project-search',Input).value='CONTROL';await pilot.pause()
+                    self.assertEqual(set(app.project_nodes),{'live-one'})
+                    app.query_one('#project-search',Input).value='';await pilot.pause()
+                    await pilot.click('#project-filter');await pilot.pause()
+                    self.assertEqual(set(app.project_nodes),{'live-one'})
+                    await pilot.click('#project-filter');await pilot.pause()
+                    self.assertEqual(set(app.project_nodes),{'live-two'})
+                    await pilot.click('#project-filter');await pilot.pause()
+                    self.assertEqual(set(app.project_nodes),{'live-two'})
+                    await pilot.click('#project-filter');await pilot.click('#pin-project');await pilot.pause()
+                    self.assertEqual(list(app.project_nodes)[0],'live-one')
+                    self.assertTrue(next(p for p in core.projects() if p['id']=='live-one')['navigation_pinned'])
+                    module=runpy.run_path(str(core.ROOT/'sidebar.py'))
+                    app.push_screen(module['GitDiffView']('sample diff'))
+                    await pilot.pause(.8)
+                    app.poll_git()
+                    self.assertIsNone(app._exception)
+                    await pilot.press('escape');await pilot.pause()
+
     async def test_compact_terminal_buttons_use_selected_shell_and_hide(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)

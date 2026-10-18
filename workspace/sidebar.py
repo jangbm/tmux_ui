@@ -7,12 +7,29 @@ from textual.app import App, ComposeResult
 from textual.containers import Vertical, Horizontal, VerticalScroll, ScrollableContainer
 from textual.widgets import Tree, Static, Input, Button, Checkbox, TabbedContent, TabPane, DirectoryTree
 from textual import on, work
+from textual.screen import ModalScreen
 import core
 import layout
 import editor_tabs
 import desktop
 import watcher
 import live_tmux
+
+
+class GitDiffView(ModalScreen):
+    DEFAULT_CSS='''
+    GitDiffView { padding: 1; background: #1b1d20; }
+    GitDiffView VerticalScroll { height: 1fr; border: round #52687d; }
+    GitDiffView Button { height: 3; }
+    '''
+    BINDINGS=[('escape','close','닫기')]
+    def __init__(self,text): super().__init__();self.text=text
+    def compose(self):
+        with VerticalScroll(): yield Static(self.text,markup=False)
+        yield Button('닫기',id='close-diff')
+    def action_close(self): self.dismiss()
+    @on(Button.Pressed,'#close-diff')
+    def close(self,event): event.stop();self.dismiss()
 from textual.widgets import Select, OptionList
 from textual.widgets.option_list import Option
 SPINNER='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
@@ -135,6 +152,12 @@ class Sidebar(App):
     Select { background: #252525; }
     #terminal-list { height: 1fr; border: none; background: #202020; color: #d6d6d6; }
     #terminal-help { height: auto; padding: 1 2; color: #a0a0a0; }
+    #project-search-tools { height: 3; }
+    #project-search { width: 1fr; height: 3; border: round #45494f; padding: 0 1; margin: 0; }
+    #project-filter { width: 12; min-width: 12; height: 3; border: none; background: #292c30; }
+    Screen.narrow #project-search-tools { layout: vertical; height: 4; }
+    Screen.narrow #project-search { width: 1fr; }
+    Screen.narrow #project-filter { width: 1fr; height: 1; min-height: 1; padding: 0; border: none; }
     '''
     BINDINGS=[('n','new_project','New'),('i','import_project','Import'),('a','agent_settings','Agents'),('r','refresh','Refresh'),('escape','cancel_form','Cancel'),('q','quit','Close')]
     def compose(self)->ComposeResult:
@@ -147,8 +170,12 @@ class Sidebar(App):
             with TabPane('Projects',id='projects-view'):
                 with Horizontal(id='section'):
                     yield Static('PROJECTS',id='section-title')
+                    yield Button('☆',id='pin-project',tooltip='현재 프로젝트 상단 고정 / 해제')
                     yield Button('⋯',id='agent-settings')
                     yield Button('+',id='new-project')
+                with Horizontal(id='project-search-tools'):
+                    yield Input(placeholder='프로젝트 검색',id='project-search')
+                    yield Button('전체 ▾',id='project-filter',tooltip='전체 → 작업 중 → 결과 → 승인 대기')
                 with Vertical(id='agent-form'):
                     yield Static('Project agents',id='agent-title')
                     yield Checkbox('Claude',id='show-claude',value=True)
@@ -174,6 +201,7 @@ class Sidebar(App):
                 yield Static('Open a project to browse files.',id='no-project')
                 yield ProjectFiles(core.ROOT/'data',id='files')
             with TabPane('Git',id='git-view'):
+                yield Button('변경 내용 보기',id='git-diff',tooltip='작업 트리와 스테이징 diff · 읽기 전용')
                 with VerticalScroll(id='git-scroll'):
                     yield Static('Open a project to see Git changes.',id='git-status',markup=False)
             with TabPane('Terminal',id='terminal-view'):
@@ -200,6 +228,7 @@ class Sidebar(App):
         self.query_one('#tree',Tree).show_root=False
         self.query_one('#new-project',Button).tooltip='New project (n)'
         self.query_one('#agent-settings',Button).tooltip='Project agents (a)'
+        self.query_one('#project-filter',Button).active_effect_duration=0
         self.refresh_projects()
         self.query_one('#tree',Tree).focus()
         self.spin_timer=self.set_interval(.22,self.tick)
@@ -210,6 +239,9 @@ class Sidebar(App):
         self.spin_timer.stop()
         self.poll_timer.stop()
         self.status_timer.stop()
+    def on_resize(self,event):
+        self.screen_stack[0].set_class(event.size.width<28,'narrow')
+        if hasattr(self,'registry_signature'): self.registry_signature=None
     @work(exclusive=True,group='status')
     async def collect_status(self):
         await asyncio.to_thread(watcher.refresh)
@@ -313,6 +345,7 @@ class Sidebar(App):
         if event.pane.id=='git-view': self.refresh_git()
         if event.pane.id=='terminal-view': self.refresh_terminals()
     def poll_git(self):
+        if len(self.screen_stack)>1: return
         if self.query_one('#views',TabbedContent).active=='git-view': self.refresh_git()
         if self.query_one('#views',TabbedContent).active=='terminal-view': self.refresh_terminals()
     @work(exclusive=True,group='terminals')
@@ -346,16 +379,38 @@ class Sidebar(App):
     async def refresh_git(self):
         project=self.current_project()
         if not project: return
+        project=core.chat_project(project)
+        output=self.screen_stack[0].query_one('#git-status',Static)
         snapshot=await asyncio.to_thread(core.git_snapshot,project['path'])
         if 'error' in snapshot:
             text=snapshot['error']
         else:
             text=f"{snapshot['branch']}\n\n"
+            if snapshot.get('upstream'):
+                text+=f"미푸시 {snapshot.get('ahead','?')} · 수신 대기 {snapshot.get('behind','?')}\n(마지막 fetch 기준)\n\n"
+            else: text+='원격 추적 브랜치 미설정\n\n'
             text+=f"{snapshot['staged']} staged · {snapshot['modified']} modified\n"
             text+=f"{snapshot['untracked']} untracked · {snapshot['conflicts']} conflicts\n\n"
             text+='\n'.join(f'{code} {name}' for code,name in snapshot['files']) or 'Working tree clean'
             if len(snapshot['files'])==200: text+='\n\nShowing up to 200 paths'
-        self.query_one('#git-status',Static).update(text)
+        output.update(text)
+    @on(Button.Pressed,'#git-diff')
+    def git_diff(self,event):
+        event.stop();self.show_git_diff()
+    @work(exclusive=True,group='git-diff')
+    async def show_git_diff(self):
+        project=self.current_project()
+        if not project: return
+        project=core.chat_project(project)
+        import subprocess
+        try:
+            parts=[]
+            for label,extra in [('작업 트리',[]),('스테이징',['--cached'])]:
+                result=await asyncio.to_thread(core.run,['git','-C',project['path'],'diff','--no-ext-diff','--no-textconv','--no-color',*extra,'--','.'],env={**os.environ,'GIT_OPTIONAL_LOCKS':'0'},timeout=2,errors='replace')
+                if result.returncode: raise ValueError('Git 변경 내용을 읽지 못했습니다.')
+                parts.append(label+'\n'+(result.stdout[:40000] or '변경 없음')+('\n… 표시 길이 제한' if len(result.stdout)>40000 else ''))
+            self.app.push_screen(GitDiffView('\n\n'.join(parts)))
+        except (OSError,ValueError,subprocess.TimeoutExpired) as error: self.notify(str(error),severity='error')
     @on(DirectoryTree.FileSelected,'#files')
     async def file_selected(self,event):
         project=self.current_project()
@@ -368,8 +423,20 @@ class Sidebar(App):
         except (OSError,ValueError,RuntimeError) as error:
             self.notify(str(error),severity='error')
     def refresh_projects(self,force=False):
+        search_input=next(iter(self.query('#project-search')),None)
+        if search_input is None: return
         items=[p for p in core.projects() if not p.get('navigation_hidden') and not p.get('source_missing')]
-        signature=tuple((p['id'],p['name'],tuple(k for k,v in p.get('agents',{}).items() if v),tuple(sorted(p.get('source_agents',{}).items())),p.get('source_agents_error','')) for p in items)
+        items.sort(key=lambda p:not p.get('navigation_pinned',False))
+        search=search_input.value.casefold().strip()
+        mode=getattr(self,'project_filter','전체')
+        def matches(p):
+            states=p.get('source_states',{}).values()
+            return (not search or search in p['name'].casefold()) and (mode=='전체' or
+                mode=='작업 중' and any(s.get('state')=='busy' for s in states) or
+                mode=='결과' and any(s.get('pending') for s in states) or
+                mode=='승인 대기' and any(s.get('pending')=='approval' for s in states))
+        items=[p for p in items if matches(p)]
+        signature=tuple((p['id'],p['name'],p.get('navigation_pinned',False),tuple(k for k,v in p.get('agents',{}).items() if v),tuple(sorted(p.get('source_agents',{}).items())),p.get('source_agents_error','')) for p in items)
         if not force and signature==self.registry_signature: return
         self.registry_signature=signature
         tabs=self.query_one('#project-tabs',ScrollableContainer)
@@ -379,9 +446,9 @@ class Sidebar(App):
         tree.root.remove_children(); self.nodes={}; self.live_nodes={}; self.project_nodes={}
         current=next((p for p in items if p['id']==self.active_project),None)
         if current: self.query_one('#active-project',Static).update(core.chat_project(current)['name'])
-        self.query_one('#section-title',Static).update(f'PROJECTS  {len(items):02}')
+        self.query_one('#section-title',Static).update(f'{len(items)}개' if self.size.width<28 else f'PROJECTS  {len(items):02}')
         for project in items:
-            label=Text(project['name'],style='bold #e8e8e8')
+            label=Text(('★ ' if project.get('navigation_pinned') else '')+project['name'],style='bold #e8e8e8')
             if project['id']==self.active_project: label.append('  •',style='#8fbd9b')
             node=tree.root.add(label,data=('project',project['id']),expand=True)
             self.project_nodes[project['id']]=node
@@ -405,6 +472,25 @@ class Sidebar(App):
         tree.root.expand()
         self.paint_status()
         self.refresh_files()
+    @on(Input.Changed,'#project-search')
+    def project_search_changed(self,event):
+        event.stop()
+        if hasattr(self,'registry_signature'): self.refresh_projects(force=True)
+    @on(Button.Pressed,'#pin-project')
+    def pin_project(self,event):
+        event.stop();project=self.current_project()
+        if not project: return
+        project=core.chat_project(project)
+        def update(items):
+            for item in items:
+                if item['id']==project['id']: item['navigation_pinned']=not item.get('navigation_pinned',False)
+        core.locked_update(core.CONFIG,update);self.refresh_projects(force=True)
+    @on(Button.Pressed,'#project-filter')
+    def cycle_project_filter(self,event):
+        event.stop()
+        modes=['전체','작업 중','결과','승인 대기']
+        self.project_filter=modes[(modes.index(getattr(self,'project_filter','전체'))+1)%len(modes)]
+        event.button.label=self.project_filter+' ▾';self.refresh_projects(force=True)
     def sync_dock(self):
         if not self.active_project: return
         result=core.tmux('show-options','-qv','-t',core.session_id(self.active_project),'@tmw_dock')
@@ -450,6 +536,7 @@ class Sidebar(App):
             self.query_one('#active-project',Static).update(selected['name'])
             self.refresh_files()
     def tick(self):
+        if len(self.screen_stack)>1: return
         self.dock_tick+=1
         if self.dock_tick%10==0: self.sync_dock()
         if self.dock_tick%3==0: self.sync_project_label()

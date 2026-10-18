@@ -77,6 +77,31 @@ class RoutingTests(unittest.TestCase):
 
 Desktop=runpy.run_path(str(core.ROOT/'desktop-app.py'))['Desktop']
 class LiveUITests(unittest.IsolatedAsyncioTestCase):
+    async def test_busy_message_queues_once_then_dispatches_and_keeps_new_draft(self):
+        current={**SNAP,'menu':False,'state':'busy','detail':'interrupt-hint'}
+        with tempfile.TemporaryDirectory() as tmp,patch.object(core,'CONFIG',Path(tmp)/'projects.json'),patch.object(core,'STATE',Path(tmp)/'state'),patch('session_input.targets',return_value=[{**SNAP,'label':'Claude %3'}]),patch('session_input.snapshot',side_effect=lambda *a:dict(current)),patch('session_input.send') as send:
+            core.atomic(core.CONFIG,[PROJECT]);state=DeskState();tab=state.open(PROJECT['id'])
+            app=Desktop(PROJECT,state.value,publish=False)
+            async with app.run_test(size=(100,30)) as pilot:
+                await pilot.pause(.7)
+                panel=app.views[tab['id']].panels['claude'];composer=panel.query_one('.composer')
+                composer.focus();composer.load_text('다음 작업')
+                await pilot.press('enter');await pilot.pause(.2)
+                send.assert_not_called();self.assertEqual(len(panel.queue.items),1)
+                composer.load_text('작성 중인 새 초안')
+                current.update(state='idle',detail='empty-prompt')
+                panel.refresh_source();await pilot.pause(.8)
+                send.assert_called_once_with(PROJECT,'claude','%3','10','다음 작업')
+                self.assertEqual(composer.text,'작성 중인 새 초안')
+                self.assertEqual(panel.queue.items,[])
+                await pilot.pause(.7);self.assertEqual(send.call_count,1)
+                await pilot.press('ctrl+f');await pilot.pause()
+                self.assertTrue(panel.query_one('.thread-search').display)
+                panel.query_one('.thread-search').value='Reply';await pilot.pause()
+                self.assertEqual(panel.search_term,'Reply')
+                await pilot.press('escape');await pilot.pause()
+                self.assertFalse(panel.query_one('.thread-search').display)
+
     async def test_source_click_routes_arrows_and_drag_copies_without_stopping(self):
         current={**SNAP,'menu':True,'state':'waiting','screen':'Approval menu\n❯ 1. Allow\n  2. Deny'}
         project={**PROJECT,'source_agents':{'claude':1,'codex':1}}

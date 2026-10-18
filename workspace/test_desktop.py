@@ -34,6 +34,20 @@ class DesktopTests(unittest.IsolatedAsyncioTestCase):
         self.owner=core.add('Workspace',self.root/'owner',claude=False,codex=False)
         self.one=core.add('unity',self.root/'one',codex=False)
         self.two=core.add('control',self.root/'two')
+    async def test_tab_menu_pins_splits_and_keeps_pinned_tabs_when_closing_others(self):
+        state=DeskState();one=state.open(self.one['id']);two=state.open(self.two['id'])
+        app=Desktop(self.owner,state.value,publish=False)
+        async with app.run_test(size=(130,40)) as pilot:
+            await pilot.pause()
+            app.tab_menu(one['id']);await pilot.pause()
+            button=next(b for b in app.screen.query('Button') if b.name=='pin')
+            await pilot.click(button);await pilot.pause()
+            self.assertTrue(app.state.locate(one['id'])[1]['pinned'])
+            app.apply_tab_action(two['id'],'others');await pilot.pause()
+            self.assertEqual(len(app.state.group()['tabs']),2)
+            app.apply_tab_action(two['id'],'right');await pilot.pause()
+            self.assertEqual(len(app.state.groups),2)
+            self.assertIsNone(app._exception)
     async def test_grouped_headers_panel_counts_close_and_drafts_survive_move(self):
         state=DeskState(); one=state.open(self.one['id']); two=state.open(self.two['id'])
         app=Desktop(self.owner,state.value,publish=False)
