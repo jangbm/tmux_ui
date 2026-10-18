@@ -129,3 +129,6 @@ Button:focus { text-style: bold; tint: #91bfe5 12%; }
 .mode-toggle { width: 6; min-width: 6; }
 
 .queue-bar .queue-edit { width: 6; }
+
+/* Native terminal caret is positioned by Desktop for IME composition. */
+.composer > .text-area--cursor { background: transparent; color: #edf1ed; text-style: none; }

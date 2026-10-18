@@ -674,6 +674,13 @@ class Desktop(App):
         # property after refresh is too late until another frame is painted.
         self.sync_ime_cursor()
         super()._display(screen,renderable)
+        if renderable is not None and self._driver and not self.is_headless and self._running and not self._closed and not self._batch_count:
+            if isinstance(self.focused,Composer) and self.focused.region.width and self.focused.region.height:
+                x,y=screen.outer_size.clamp_offset(self.focused.cursor_screen_offset)
+                # Expose a native caret for terminal IMEs instead of only drawing a cell.
+                self._driver.write(f'\x1b[{y+1};{x+1}H\x1b[6 q\x1b[?25h')
+            else:
+                self._driver.write('\x1b[0 q\x1b[?25l')
     def sync_ime_cursor(self):
         composer=self.focused
         if isinstance(composer,Composer) and composer.region.width and composer.region.height:
