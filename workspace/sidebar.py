@@ -14,6 +14,8 @@ import editor_tabs
 import desktop
 import watcher
 import live_tmux
+import navigation_visibility
+from navigation_menus import ProjectMenu, HiddenProjects
 
 
 class GitDiffView(ModalScreen):
@@ -43,6 +45,8 @@ class ProjectTab(Static):
         self.tooltip=project['name']+badge
         self.project_id=project['id']
     def on_mouse_down(self,event):
+        if event.button==3:
+            event.stop();self.app.project_menu(self.project_id);return
         if event.button!=1: return
         self.start=(event.screen_x,event.screen_y)
         self.capture_mouse()
@@ -66,6 +70,14 @@ class ProjectTab(Static):
 from file_tree import ProjectFiles
 
 class ProjectTree(Tree):
+    async def _on_click(self,event):
+        if event.button==3:
+            event.stop();event.prevent_default()
+            node=self.get_node_at_line(event.style.meta.get('line',-1))
+            if node and node.data:
+                self.move_cursor(node);self.app.project_menu(node.data[1])
+            return
+        await super()._on_click(event)
     def render_label(self,node,base_style,style):
         label=super().render_label(node,base_style,style)
         start=label.plain.find('결과')
@@ -160,6 +172,7 @@ class Sidebar(App):
     #project-search:focus { border: round #78a9d1; }
     #project-filter { color: #c7d4e3; }
     #project-empty { display: none; height: auto; padding: 1; color: #acb6c4; }
+    #hidden-projects { display: none; height: 1; width: 1fr; min-width: 1; border: none; padding: 0; background: #29333f; color: #c7d4e3; }
     #file-tools { height: 1; }
     #file-tools Button { width: 1fr; min-width: 6; height: 1; border: none; padding: 0; background: #29333f; color: #c7d4e3; }
     #git-scroll { padding: 1; }
@@ -226,6 +239,7 @@ class Sidebar(App):
                         yield Button('×',id='hide-terminal',tooltip='터미널 숨기기 · 셸 유지')
                 yield OptionList(id='terminal-list')
                 yield Static('터미널을 선택하면 다시 열립니다.\nCtrl+` · 하단 패널 열기/닫기',id='terminal-help')
+        yield Button('숨긴 항목 보기',id='hidden-projects',tooltip='숨긴 프로젝트 목록 · 선택하면 다시 표시')
         yield Static('',id='summary')
         with Horizontal(id='dock-tools'):
             yield Static('배치',id='dock-label')
@@ -240,7 +254,7 @@ class Sidebar(App):
         self.sync_dock()
         self.query_one('#tree',Tree).show_root=False
         self.query_one('#new-project',Button).tooltip='New project (n)'
-        self.query_one('#agent-settings',Button).tooltip='Project agents (a)'
+        self.query_one('#agent-settings',Button).tooltip='선택 프로젝트 메뉴 · 숨기기 / 대화창 설정'
         self.query_one('#project-filter',Button).active_effect_duration=0
         self.refresh_projects()
         self.query_one('#tree',Tree).focus()
@@ -284,8 +298,28 @@ class Sidebar(App):
         self.query_one('#agent-form').remove_class('visible')
         self.query_one('#tree',Tree).focus()
     @on(Button.Pressed,'#agent-settings')
-    def agent_settings(self): self.action_agent_settings()
-    def action_agent_settings(self):
+    def agent_settings(self):
+        node=self.query_one('#tree',Tree).cursor_node
+        if node and node.data: self.project_menu(node.data[1])
+        else:
+            project=self.current_project()
+            if project: self.project_menu(core.chat_project(project)['id'])
+    def project_menu(self,key):
+        project=next((p for p in core.projects() if p['id']==key),None)
+        if project is None: return
+        def chosen(action):
+            if action=='hide-project':
+                navigation_visibility.hide(project);self.refresh_projects(force=True)
+                self.notify(project['name']+' · 사이드바에서 숨김',timeout=2)
+            elif action=='configure-project': self.action_agent_settings(project)
+        self.push_screen(ProjectMenu(project['name']),chosen)
+    @on(Button.Pressed,'#hidden-projects')
+    def hidden_projects(self,event):
+        event.stop()
+        def restore(key):
+            if key: navigation_visibility.restore(key);self.refresh_projects(force=True)
+        self.push_screen(HiddenProjects(navigation_visibility.rules()),restore)
+    def action_agent_settings(self,target=None):
         project=self.current_project()
         if not project:
             self.notify('먼저 프로젝트를 선택해 주세요'); return
@@ -293,7 +327,7 @@ class Sidebar(App):
         self.query_one('#form').remove_class('visible')
         self.query_one('#agent-form').add_class('visible')
         grouped=desktop.enabled(project)
-        target=core.chat_project(project) if grouped else project
+        target=target or (core.chat_project(project) if grouped else project)
         self.settings_context_id=target['id']
         available=target.get('source_agents',{}) if target.get('kind')=='tmux-live' else target.get('agents',{})
         self.query_one('#agent-title',Static).update(target['name']+' · 대화창 표시')
@@ -443,7 +477,10 @@ class Sidebar(App):
     def refresh_projects(self,force=False):
         search_input=next(iter(self.query('#project-search')),None)
         if search_input is None: return
-        items=[p for p in core.projects() if not p.get('navigation_hidden') and not p.get('source_missing')]
+        hidden=navigation_visibility.rules()
+        restore=self.query_one('#hidden-projects',Button)
+        restore.display=bool(hidden);restore.label=f'숨김 {len(hidden)}개 · 보기'
+        items=[p for p in core.projects() if not p.get('navigation_hidden') and not p.get('source_missing') and not navigation_visibility.hidden(p,hidden)]
         items.sort(key=lambda p:not p.get('navigation_pinned',False))
         search=search_input.value.casefold().strip()
         mode=getattr(self,'project_filter','전체')

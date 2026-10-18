@@ -119,3 +119,11 @@ TMW_SOCKET=tmux-ui-test workspace/.venv/bin/python workspace/check-desktop.py
 - 폴더 상태는 프로젝트 경로별로 로컬 저장하여 전환·새로고침·재시작 뒤 복원합니다. Git에는 포함하지 않습니다.
 - 트리는 최대 깊이 8, 총 1,000노드, 폴더당 첫 200항목으로 제한합니다. 큰 폴더는 일부 항목이 생략되며 툴팁과 펼치기 알림에서 확인할 수 있습니다. 심볼릭 링크와 생성 폴더는 탐색하지 않습니다.
 - `workspace/.venv/bin/python workspace/capture-navigation.py`는 합성 예시만으로 탐색 화면을 캡처합니다. 이전 소스의 workspace 디렉터리를 인자로 주면 before 캡처를 생성합니다.
+
+## 사이드바에서만 프로젝트 숨기기
+
+프로젝트 우클릭 또는 선택 후 `⋯` → **사이드바에서 숨기기**. 하단 **숨김 n개 · 보기**에서 항목을 선택하면 다시 표시합니다. 원본 tmux 세션·프로세스·폴더와 이미 열린 대화 탭은 유지됩니다.
+
+숨김 목록은 Git에서 제외되는 `data/state/navigation-hidden.json`에 저장합니다. 원본 서버 socket과 세션 이름을 기준으로 하므로 자동 발견·UI 재시작·동일 이름 세션 재생성 뒤에도 유지됩니다. 서로 다른 서버의 같은 이름은 별개입니다.
+
+한글 입력 커서 전달은 `workspace/.venv/bin/python workspace/check-ime-cursor.py`로 격리 tmux 서버에서 검사할 수 있습니다. 실제 Windows IME 조합 표시와 입력 지연은 Windows Terminal에서 별도 확인해야 합니다.

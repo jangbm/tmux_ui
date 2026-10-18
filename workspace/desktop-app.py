@@ -669,6 +669,11 @@ class Desktop(App):
         with Stage(id='stage'):
             yield GroupGrip('',id='group-grip')
             yield Static('',id='drop-preview')
+    def _display(self,screen,renderable):
+        # Textual 7.5 emits the terminal CUP during this call. Correcting the
+        # property after refresh is too late until another frame is painted.
+        self.sync_ime_cursor()
+        super()._display(screen,renderable)
     def sync_ime_cursor(self):
         composer=self.focused
         if isinstance(composer,Composer) and composer.region.width and composer.region.height:
