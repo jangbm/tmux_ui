@@ -12,6 +12,39 @@ LiveView=runpy.run_path(str(core.ROOT/'live-view.py'))['LiveView']
 
 
 class SourceTests(unittest.TestCase):
+    def test_new_session_is_discovered_with_both_agents_during_poll(self):
+        with tempfile.TemporaryDirectory() as tmp,patch.object(core,'CONFIG',Path(tmp)/'projects.json'),patch.object(core,'STATE',Path(tmp)/'state'):
+            original=dict(id='live-control',name='Control custom',kind='tmux-live',source_socket='/tmp/source',source_session='control',source_pane='%1',navigation_hidden=True)
+            core.atomic(core.CONFIG,[original])
+            rows='control|%1|1|1|/projects/control\ntest|%24|1|1|/projects/test\ntest|%25|0|1|/projects/test\n'
+            with patch('live_tmux.read',return_value=rows) as read,patch('live_tmux.connections',return_value={'test':{'claude':1,'codex':1}}),patch('live_tmux.activity',return_value={}):
+                live_tmux.refresh_connections(force=True)
+                live_tmux.refresh_connections(force=True)
+            records=core.projects();self.assertEqual(len(records),2)
+            self.assertEqual(records[0]['name'],'Control custom');self.assertTrue(records[0]['navigation_hidden'])
+            self.assertEqual(records[1]['id'],'live-test')
+            self.assertEqual(records[1]['source_pane'],'%24')
+            self.assertEqual(records[1]['source_agents'],{'claude':1,'codex':1})
+            self.assertTrue(all(c.args[1]=='list-panes' for c in read.call_args_list))
+
+    def test_discovery_collision_preserves_local_and_other_server_projects(self):
+        records=[{'id':'live-test','name':'Local'}]
+        found=[dict(name='test',source_session='test',source_socket=s,kind='tmux-live') for s in ('/tmp/a','/tmp/b')]
+        live_tmux.merge_discovered(records,found);live_tmux.merge_discovered(records,found)
+        self.assertEqual(len(records),3)
+        self.assertEqual(len({p['id'] for p in records}),3)
+        self.assertEqual(records[0],{'id':'live-test','name':'Local'})
+
+    def test_failed_discovery_preserves_registry(self):
+        with tempfile.TemporaryDirectory() as tmp,patch.object(core,'CONFIG',Path(tmp)/'projects.json'),patch.object(core,'STATE',Path(tmp)/'state'):
+            original=dict(id='live-test',kind='tmux-live',source_socket='/tmp/source',source_session='test',source_agents={'claude':1})
+            core.atomic(core.CONFIG,[original])
+            with patch('live_tmux.read',side_effect=RuntimeError('offline')):
+                live_tmux.refresh_connections(force=True)
+            result=core.projects();self.assertEqual(len(result),1)
+            self.assertEqual(result[0]['source_agents'],{'claude':1})
+            self.assertEqual(result[0]['source_agents_error'],'unavailable')
+
     def test_only_read_commands_are_accepted(self):
         with patch('subprocess.run',return_value=subprocess.CompletedProcess([],0,'screen','')) as run:
             self.assertEqual(live_tmux.capture('/tmp/source','%3'),'screen')

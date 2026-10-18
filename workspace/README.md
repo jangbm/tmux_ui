@@ -233,3 +233,11 @@ TMW_SOCKET=tmux-ui-test ./.venv/bin/python check-desktop.py
 - 내용창의 텍스트를 마우스로 드래그하면 선택한 부분이 복사됩니다. 선택 상태에서 Ctrl+C도 복사합니다. WSL에서는 clip.exe에 UTF-16으로 전달하여 한글을 보존합니다.
 - 선택한 글이 없는 Ctrl+C 또는 ■는 해당 AI의 응답을 중지합니다.
 - AI 제목 오른쪽 ⏻는 확인 후 선택한 원본 AI에 /exit를 전송합니다. 빈 입력창의 준비 상태에서만 종료되며, tmux pane/session은 유지합니다. ×는 화면만 숨깁니다.
+
+복사는 UI의 OSC52 요청을 tmux가 터미널로 전달하는 경로를 사용합니다. `preview.conf`의 `set -s set-clipboard on`이 필요합니다(`external`은 앱의 복사 요청을 차단합니다). WSL의 `clip.exe`는 추가 전달 경로입니다. `check-clipboard.py`로 실제 tmux→클라이언트 PTY 전달을 검사할 수 있습니다.
+
+## 관제에서 만든 프로젝트 자동 표시
+
+관제가 기존 원본 tmux 서버에 프로젝트 세션을 만들면 사이드바가 주기적으로 새 세션을 등록합니다. Claude/Codex는 각 pane의 실제 실행 상태로 표시하며 프로젝트를 클릭하면 기존 AI 화면에 연결됩니다. 폴더 신뢰 확인을 자동 승인하거나 AI를 중복 실행하지 않습니다.
+
+즉시 발견하려면 `.venv/bin/python ui-maintenance.py discover`를 실행하세요. 관제의 소스 수정·검증·적용 절차는 [CONTROL_UI.md](../CONTROL_UI.md)에 있습니다.

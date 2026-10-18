@@ -518,14 +518,16 @@ class Desktop(App):
             if panel and (panel.busy or panel.is_live): panel.stop_response()
     def copy_to_clipboard(self,text):
         super().copy_to_clipboard(text)
+        self.notify('선택한 글의 복사를 요청했습니다.',timeout=2)
         if shutil.which('clip.exe'): self.copy_windows(text)
     @work(exclusive=True,group='clipboard')
     async def copy_windows(self,text):
         try:
             result=await asyncio.to_thread(subprocess.run,['clip.exe'],input=text.encode('utf-16'),capture_output=True,timeout=3)
-            if result.returncode: self.notify('Windows 클립보드 복사에 실패했습니다.',severity='warning')
+            # OSC52 above is the primary route through tmux. clip.exe is optional
+            # because WSL interop may be unavailable in the UI process.
         except (OSError,subprocess.TimeoutExpired):
-            self.notify('Windows 클립보드에 접근하지 못했습니다.',severity='warning')
+            pass
     def on_mount(self):
         self.render_state()
         self.set_interval(.25,self.poll_request)

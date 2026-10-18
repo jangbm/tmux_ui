@@ -6,6 +6,7 @@ import fcntl
 import hashlib
 import json
 import re
+import os
 import core
 
 
@@ -119,10 +120,43 @@ def activity(socket,deadline):
     return found
 
 
+def discover(socket,deadline):
+    """Read all source sessions in one call; never create or start an AI."""
+    remaining=deadline-time.monotonic()
+    if remaining<=0: return []
+    rows=read(socket,'list-panes','-a','-F',
+        '#{session_name}|#{pane_id}|#{window_active}|#{pane_active}|#{pane_current_path}',timeout=min(.2,remaining))
+    found={}
+    for row in rows.splitlines():
+        name,pane,window_active,pane_active,path=row.split('|',4)
+        if name not in found or (window_active=='1' and pane_active=='1'):
+            found[name]=dict(name=name,path=path,agents={'claude':False,'codex':False},kind='tmux-live',
+                source_socket=str(socket),source_session=name,source_pane=pane)
+    return list(found.values())
+
+
+def merge_discovered(records,found):
+    for item in found:
+        identity=(item['source_socket'],item['source_session'])
+        existing=next((p for p in records if p.get('kind')=='tmux-live' and
+            (p.get('source_socket'),p.get('source_session'))==identity),None)
+        if existing: continue  # Keep names, order, visibility, and pinned targets.
+        key='live-'+core.slug(item['source_session'])
+        if any(p['id']==key for p in records):
+            key+='-'+hashlib.sha256(repr(identity).encode()).hexdigest()[:12]
+        suffix=key;number=2
+        while any(p['id']==key for p in records):
+            key=f'{suffix}-{number}';number+=1
+        records.append({**item,'id':key})
+
+
 def refresh_connections(force=False):
     """One bounded source scan shared by all project sidebars every eight seconds."""
     records=[p for p in core.projects() if p.get('kind')=='tmux-live']
-    if not records: return False
+    sockets={p['source_socket'] for p in records}
+    default=Path(os.environ.get('TMUX_TMPDIR','/tmp'))/f'tmux-{os.getuid()}'/'default'
+    if not sockets and default.exists(): sockets.add(str(default))
+    if not sockets: return False
     core.STATE.mkdir(parents=True,exist_ok=True)
     with (core.STATE/'live-connections.lock').open('a') as lock:
         try: fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -132,14 +166,17 @@ def refresh_connections(force=False):
         except (OSError,ValueError): last=0
         if not force and time.time()-last<8: return False
         deadline=time.monotonic()+.8
-        observed={}; errors={}; states={}
-        for socket in {p['source_socket'] for p in records}:
+        observed={}; errors={}; states={}; discovered=[]
+        for socket in sorted(sockets):
+            try: discovered.extend(discover(socket,deadline))
+            except (OSError,RuntimeError,ValueError,TimeoutError,subprocess.TimeoutExpired): pass
             try: observed[socket]=connections(socket,deadline)
             except (OSError,RuntimeError,ValueError,TimeoutError,subprocess.TimeoutExpired): errors[socket]='unavailable'
             try: states[socket]=activity(socket,deadline)
             except (OSError,RuntimeError,ValueError,TimeoutError,subprocess.TimeoutExpired): pass
         now=time.time()
         def update(items):
+            merge_discovered(items,discovered)
             for project in items:
                 if project.get('kind')!='tmux-live': continue
                 socket=project['source_socket']; session=project['source_session']
@@ -165,12 +202,7 @@ def register(socket):
             agents={'claude':False,'codex':False},kind='tmux-live',
             source_socket=str(socket),source_session=name,source_pane=active['id']))
     def update(records):
-        for item in found:
-            existing=next((p for p in records if p['id']==item['id']),None)
-            if existing:
-                if existing.get('kind')!='tmux-live': raise ValueError('Project ID already used: '+item['id'])
-                existing.update(item)
-            else: records.append(item)
+        merge_discovered(records,found)
     core.locked_update(core.CONFIG,update)
     refresh_connections(force=True)
     return [p for p in core.projects() if p.get('kind')=='tmux-live']

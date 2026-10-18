@@ -65,6 +65,9 @@ class ProjectTests(unittest.TestCase):
 
 class SidebarTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        # Sidebar interaction tests must not discover the host's real sessions.
+        discovery=patch('live_tmux.refresh_connections',return_value=False)
+        discovery.start();self.addCleanup(discovery.stop)
         tmux=patch.object(core,'tmux',return_value=__import__('subprocess').CompletedProcess([],0,'',''))
         tmux.start(); self.addCleanup(tmux.stop)
         collector=patch('watcher.refresh',return_value=False)

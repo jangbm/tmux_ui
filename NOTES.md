@@ -201,3 +201,15 @@
 - AI 제목에 ⏻ 추가. 대상 session/agent/pane 확인창, 취소 시 무전송. 준비 상태와 PID 재확인 후 /exit. 선택 pane의 remain-on-exit을 켜서 세션 보존. 작업·승인·입력 중이면 종료 거부. × 숨기기와 분리.
 - 자동 검사 52개, 격리 tmux 전송/메뉴/정상 종료/세션 유지 검사, Desktop 마우스 탭 이동·닫기·갱신 통합 검사 통과. 운영 AI에는 종료나 승인 입력을 보내지 않음.
 - 사용자가 https://github.com/jangbm/tmux_ui.git 연결·커밋·푸시를 명시 요청. 기존 로컬 커밋 전용 원칙에 대한 이번 작업의 사용자 승인으로 처리. 로컬 데이터·대화·초안·가상환경 제외.
+
+2026-10-18 복사 전달 경로 수정
+- 사용자가 실제 붙여넣기 실패를 보고. 실행 중 preview 서버의 set-clipboard가 external이라 Textual의 OSC52를 차단하는 것을 확인. clip.exe는 WSL interop에 의존하므로 유일한 대체 경로로 사용할 수 없음.
+- preview.conf에 set -s set-clipboard on 추가. 운영 default 서버 설정은 유지. 복사 요청 시 짧은 알림 표시, 선택 내용이나 클립보드는 로그에 저장하지 않음.
+- check-clipboard.py: 임시 소켓/PTY에서 external 차단 재현 → 프로젝트 설정 적용 → 한글·줄바꿈 OSC52가 tmux 클라이언트 터미널까지 전달됨과 tmux 버퍼 원문 일치 검증. 테스트는 사용자 Windows 클립보드를 덮어쓰지 않음.
+
+2026-10-18 새 tmux 프로젝트 자동 등록 / 관제 공동 편집
+- 기존 refresh_connections가 등록된 프로젝트의 상태만 갱신하여 관제가 만든 test 세션이 누락됨. 알려진 원본 socket의 list-panes 전체 결과로 새 세션을 매 주기 발견하고 등록하도록 수정. 최초 등록이 없으면 기본 tmux socket을 발견 대상으로 사용.
+- session+socket으로 중복 방지. ID 충돌 시 안정적인 해시를 붙이며 로컬 프로젝트, 기존 이름·순서·숨김·pane 선택을 보존. 원본 서버에는 읽기만 수행.
+- 실제 test의 Claude %24와 Codex %25 발견. Sidebar 갱신 후 두 자식 항목 표시 및 Desktop 생존 확인.
+- CONTROL_UI.md와 ui-maintenance.py status/discover/reload 추가. control도 공유 UI 소스를 수정할 수 있다는 사용자 요청을 AGENTS.md에 반영. 파일 쓰기 권한과 도구별 작업 폴더 제한은 구분.
+- 자동 등록 변경 후 전체 검사 55개 통과. 테스트용 Sidebar에서는 실제 호스트 발견을 mock하여 운영 프로젝트가 테스트 레지스트리에 섞이지 않게 격리. 실제 전체 연결 갱신 0.049초, test Claude 1/Codex 1 확인.
