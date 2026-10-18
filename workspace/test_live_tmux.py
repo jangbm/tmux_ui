@@ -12,6 +12,24 @@ LiveView=runpy.run_path(str(core.ROOT/'live-view.py'))['LiveView']
 
 
 class SourceTests(unittest.TestCase):
+    def test_removed_session_is_hidden_and_recreation_restores_without_losing_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp,patch.object(core,'CONFIG',Path(tmp)/'projects.json'),patch.object(core,'STATE',Path(tmp)/'state'):
+            original=dict(id='live-test',name='test',kind='tmux-live',source_socket='/tmp/source',source_session='test',path='/projects/test')
+            core.atomic(core.CONFIG,[original])
+            other=dict(name='test2',kind='tmux-live',source_socket='/tmp/source',source_session='test2')
+            with patch('live_tmux.discover',return_value=[other]),patch('live_tmux.connections',return_value={'test2':{}}),patch('live_tmux.activity',return_value={}):
+                live_tmux.refresh_connections(force=True)
+            self.assertTrue(core.projects()[0]['source_missing'])
+            self.assertFalse(core.projects()[1]['source_missing'])
+            with patch('live_tmux.discover',side_effect=TimeoutError),patch('live_tmux.connections',return_value={}),patch('live_tmux.activity',return_value={}):
+                live_tmux.refresh_connections(force=True)
+            self.assertFalse(core.projects()[1]['source_missing'])
+            with patch('live_tmux.discover',return_value=[original,other]),patch('live_tmux.connections',return_value={'test':{},'test2':{}}),patch('live_tmux.activity',return_value={}):
+                live_tmux.refresh_connections(force=True)
+            self.assertFalse(core.projects()[0]['source_missing'])
+            self.assertEqual(core.projects()[0]['path'],'/projects/test')
+            self.assertEqual(len(core.projects()),2)
+
     def test_new_session_is_discovered_with_both_agents_during_poll(self):
         with tempfile.TemporaryDirectory() as tmp,patch.object(core,'CONFIG',Path(tmp)/'projects.json'),patch.object(core,'STATE',Path(tmp)/'state'):
             original=dict(id='live-control',name='Control custom',kind='tmux-live',source_socket='/tmp/source',source_session='control',source_pane='%1',navigation_hidden=True)

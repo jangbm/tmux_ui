@@ -22,7 +22,7 @@ def main():
     for project in core.projects():
         if project.get('kind')=='tmux-live':
             print(json.dumps({key:project.get(key) for key in
-                ('id','name','path','source_session','source_agents','source_agents_error')},ensure_ascii=False))
+                ('id','name','path','source_session','source_agents','source_agents_error','source_missing')},ensure_ascii=False))
 
 
 if __name__=='__main__': main()

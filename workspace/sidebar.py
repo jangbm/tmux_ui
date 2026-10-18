@@ -368,7 +368,7 @@ class Sidebar(App):
         except (OSError,ValueError,RuntimeError) as error:
             self.notify(str(error),severity='error')
     def refresh_projects(self,force=False):
-        items=[p for p in core.projects() if not p.get('navigation_hidden')]
+        items=[p for p in core.projects() if not p.get('navigation_hidden') and not p.get('source_missing')]
         signature=tuple((p['id'],p['name'],tuple(k for k,v in p.get('agents',{}).items() if v),tuple(sorted(p.get('source_agents',{}).items())),p.get('source_agents_error','')) for p in items)
         if not force and signature==self.registry_signature: return
         self.registry_signature=signature

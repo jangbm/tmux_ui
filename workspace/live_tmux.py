@@ -123,7 +123,7 @@ def activity(socket,deadline):
 def discover(socket,deadline):
     """Read all source sessions in one call; never create or start an AI."""
     remaining=deadline-time.monotonic()
-    if remaining<=0: return []
+    if remaining<=0: raise TimeoutError('Session discovery timed out')
     rows=read(socket,'list-panes','-a','-F',
         '#{session_name}|#{pane_id}|#{window_active}|#{pane_active}|#{pane_current_path}',timeout=min(.2,remaining))
     found={}
@@ -166,9 +166,12 @@ def refresh_connections(force=False):
         except (OSError,ValueError): last=0
         if not force and time.time()-last<8: return False
         deadline=time.monotonic()+.8
-        observed={}; errors={}; states={}; discovered=[]
+        observed={}; errors={}; states={}; discovered=[]; sessions={}
         for socket in sorted(sockets):
-            try: discovered.extend(discover(socket,deadline))
+            try:
+                found=discover(socket,deadline)
+                discovered.extend(found)
+                sessions[socket]={p['source_session'] for p in found}
             except (OSError,RuntimeError,ValueError,TimeoutError,subprocess.TimeoutExpired): pass
             try: observed[socket]=connections(socket,deadline)
             except (OSError,RuntimeError,ValueError,TimeoutError,subprocess.TimeoutExpired): errors[socket]='unavailable'
@@ -180,6 +183,9 @@ def refresh_connections(force=False):
             for project in items:
                 if project.get('kind')!='tmux-live': continue
                 socket=project['source_socket']; session=project['source_session']
+                # Only a successful session listing establishes removal. Keep
+                # metadata/drafts, and restore the entry if the session returns.
+                if socket in sessions: project['source_missing']=session not in sessions[socket]
                 project['source_agents_error']=errors.get(socket,'')
                 if socket in observed:
                     project['source_agents']=observed[socket].get(session,{})
